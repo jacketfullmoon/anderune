@@ -3,12 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#4a2494">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Quest</title>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Anderune">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.json">
+<title>Anderune</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
 <link rel="stylesheet" href="style.css">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -26,6 +31,9 @@
 
 <!-- Round side buttons (gas-app style) -->
 <div id="side-btns" class="hidden">
+  <button id="btn-quests" class="side-btn" aria-label="Quests">📜<span id="quest-dot" class="dot hidden"></span></button>
+  <button id="btn-stats" class="side-btn" aria-label="Accomplishments">🏅</button>
+  <button id="btn-search" class="side-btn" aria-label="Search players">🔍</button>
   <button id="btn-friends" class="side-btn" aria-label="Friends and players">🤝<span id="friends-dot" class="dot hidden"></span></button>
   <button id="btn-bag" class="side-btn bag-btn" aria-label="Bag and items"><span class="ico-sub">🍗</span><span class="ico-main">🎒</span></button>
   <button id="btn-profile" class="side-btn avatar" aria-label="My character"></button>
@@ -40,6 +48,7 @@
   <div class="auth-card">
     <div class="auth-logo">🗺️</div>
     <h2 id="auth-title">Create your character</h2>
+    <p class="tagline">Anderune — real-world LARP across LA</p>
     <div id="auth-tabs">
       <button id="tab-create" class="auth-tab active">Create Account</button>
       <button id="tab-login" class="auth-tab">Log In</button>
@@ -75,18 +84,8 @@
   <div class="arena">
     <div class="sun"></div>
     <div class="cloud c1"></div><div class="cloud c2"></div>
-    <div class="bt-card enemy-card">
-      <div class="bt-nameline"><span id="bt-enemy-name">RIVAL</span><span class="bt-lv" id="bt-enemy-lv">Lv5</span></div>
-      <div class="bt-bar"><div id="bt-enemy-hp"></div></div>
-      <div class="bt-hpnum" id="bt-enemy-hpnum"></div>
-    </div>
-    <div class="bt-spot enemy"><div class="platform"></div><div class="bt-sprite" id="bt-enemy-sprite"></div></div>
-    <div class="bt-spot me"><div class="platform"></div><div class="bt-sprite" id="bt-me-sprite"></div></div>
-    <div class="bt-card me-card">
-      <div class="bt-nameline"><span id="bt-me-name">YOU</span><span class="bt-lv" id="bt-me-lv">Lv5</span></div>
-      <div class="bt-bar"><div id="bt-me-hp"></div></div>
-      <div class="bt-hpnum" id="bt-me-hpnum">30/30</div>
-    </div>
+    <div id="foes" class="fighters foes"></div>
+    <div id="mine" class="fighters mine"></div>
   </div>
   <div class="bt-panel">
     <div id="bt-text" class="bt-text"></div>
@@ -94,7 +93,7 @@
   </div>
 </section>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
 <script src="data.js"></script>
 <script src="avatar.js"></script>
 <script src="backend.js"></script>

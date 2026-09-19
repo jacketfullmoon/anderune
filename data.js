@@ -1,5 +1,8 @@
 // Game data: items, treasure spots and shops. Players come from the database.
 
+// Accounts that act as "Anderune masters" (case-insensitive character names).
+const ADMIN_NAMES = ['zack'];
+
 const START = { lat: 34.0155, lng: -118.4945, label: 'Santa Monica' }; // near 3rd St Promenade
 const CLAIM_RADIUS_M = 60;   // how close you must be to open a chest
 const NEARBY_RADIUS_M = 500; // how close another player must be to battle (friends can chat from anywhere)
@@ -51,7 +54,53 @@ const SHOPS = [
 
 const AVATAR_OPTIONS = {
   skin: ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a1e'],
-  hair: ['short', 'long', 'spiky', 'curly', 'bun', 'bald'],
+  hair: ['short', 'buzz', 'fade', 'side', 'messy', 'spiky', 'waves', 'curly', 'afro', 'bob', 'long', 'wavy', 'bun', 'pony', 'pigtails', 'braids', 'bald'],
   hairColor: ['#1b1b1b', '#4a2a12', '#8b4513', '#e6b422', '#d9534f', '#6d28d9', '#e5e7eb'],
   shirt: ['#3b82f6', '#ff5a4e', '#2fbf71', '#f59e0b', '#8b5cf6', '#06b6d4', '#1d1d27', '#ec4899'],
 };
+
+// Ready-made quest lines. Players can also write their own (those live in the database).
+const BUILTIN_QUESTS = [
+  {
+    id: 'q_deli', title: 'The Bay Cities Key', level: 3, byName: 'Anderune', builtin: true,
+    blurb: 'A courier job across the Westside. Pick up a package in Santa Monica, then open what it unlocks at Century City.',
+    steps: [
+      { type: 'go', name: 'Third Street Promenade', lat: 34.01600, lng: -118.49620,
+        text: 'Meet your contact by the dinosaur topiary fountains. They point you east.' },
+      { type: 'go', name: 'Bay Cities Italian Deli', lat: 34.01855, lng: -118.48645, grant: 'Brass Deli Key',
+        text: 'Ask for the package held under the counter. You walk out with a heavy brass key.' },
+      { type: 'boss', name: 'Eataly, Century City', lat: 34.05830, lng: -118.41770, requires: 'Brass Deli Key',
+        text: 'The key opens a cellar door behind the pasta counter. Something down there is awake.',
+        boss: { name: 'The Pantry Wyrm', lvl: 8, hp: 44, atk: 8, def: 3 } },
+    ],
+    reward: { medal: '🐉 Wyrm of the West', coins: 200, xp: 60 },
+  },
+  {
+    id: 'q_pier', title: 'Pier Patrol', level: 1, byName: 'Anderune', builtin: true,
+    blurb: 'A short one for new travelers. Walk the bluffs, then deal with whatever is stealing chips on the pier.',
+    steps: [
+      { type: 'go', name: 'Palisades Park', lat: 34.02160, lng: -118.50480,
+        text: 'Watch the sunset line up over the water. A lifeguard tells you about the thefts.' },
+      { type: 'go', name: 'Pier Carousel', lat: 34.00970, lng: -118.49700, grant: 'Bag of Boardwalk Chips',
+        text: 'You buy bait: one bag of chips, still warm.' },
+      { type: 'boss', name: 'End of the Pier', lat: 34.00827, lng: -118.49985, requires: 'Bag of Boardwalk Chips',
+        text: 'You hold the bag out over the railing. The flock goes quiet, and their king lands.',
+        boss: { name: 'The Seagull King', lvl: 4, hp: 26, atk: 5, def: 1 } },
+    ],
+    reward: { medal: '🪶 Crown of Feathers', coins: 80, xp: 35 },
+  },
+  {
+    id: 'q_summit', title: 'Sign of the Hills', level: 5, byName: 'Anderune', builtin: true,
+    blurb: 'A long climb for experienced travelers. Bring water — this one is a real hike.',
+    steps: [
+      { type: 'go', name: 'Griffith Observatory', lat: 34.11842, lng: -118.30039, grant: 'Star Chart Fragment',
+        text: 'A docent slips you half a star chart and points north toward the ridge.' },
+      { type: 'go', name: 'Brush Canyon Trailhead', lat: 34.13190, lng: -118.31470,
+        text: 'The fire road starts here. It is longer than it looks.' },
+      { type: 'boss', name: 'Mt. Lee Summit', lat: 34.13426, lng: -118.32138, requires: 'Star Chart Fragment',
+        text: 'Behind the letters, the chart fragment glows. Something built from old transmitters stands up.',
+        boss: { name: 'The Broadcast Giant', lvl: 12, hp: 60, atk: 11, def: 5 } },
+    ],
+    reward: { medal: '📡 Voice of the Hills', coins: 350, xp: 90 },
+  },
+];

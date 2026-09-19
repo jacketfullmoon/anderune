@@ -36,8 +36,11 @@ const Backend = (() => {
   const union = (...v) => ({ __op: 'union', v });
   const emailFor = (name) => name.toLowerCase() + EMAIL_DOMAIN;
 
+  // On localhost use the fake backend so test accounts never touch the real database.
+  // Add ?live to the URL to talk to Firebase from localhost anyway.
+  const wantsLive = new URLSearchParams(location.search).has('live');
+  if (local && !wantsLive) return mockBackend();
   if (configured && typeof firebase !== 'undefined') return firebaseBackend();
-  if (local) return mockBackend();
   return { mode: 'unconfigured', inc, union };
 
   // ───────────────────────── Firebase ─────────────────────────
