@@ -26,7 +26,7 @@ let realGps = false;
 let unsubs = [];
 
 const newPlayer = (name) => ({
-  name, look: { skin: '#f1c27d', hair: 'short', hairColor: '#4a2a12', shirt: '#3b82f6', bg: '#cfe8ff' },
+  name, look: { skin: '#f1c27d', hair: 'short', hairColor: '#4a2a12', shirt: '#3b82f6', bg: '#cfe8ff', top: 'tee' },
   equipped: { hat: null, face: null, neck: null }, bag: { potion: 2 },
   coins: 120, hp: 34, lvl: 5, xp: 0, claimed: [], friends: [],
   stats: { battles: 0, wins: 0, treasures: 0, quests: 0 }, medals: [], quest: null,
@@ -516,7 +516,7 @@ function useOrEquip(id) {
 }
 
 // ---------- profile / character creator ----------
-// Shrink an uploaded photo to a small square so it fits in the database and loads fast.
+// Pick a photo, then let them frame it before it becomes their icon.
 function pickPhoto() {
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
@@ -526,18 +526,7 @@ function pickPhoto() {
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
-      img.onload = () => {
-        const size = 128, c = document.createElement('canvas');
-        c.width = c.height = size;
-        const ctx = c.getContext('2d');
-        const side = Math.min(img.width, img.height);
-        ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
-        let data = c.toDataURL('image/jpeg', 0.75);
-        if (data.length > 200000) data = c.toDataURL('image/jpeg', 0.5);
-        upd({ photo: data });
-        toast('📸 Photo set as your icon', null, 2500);
-        openProfile();
-      };
+      img.onload = () => cropPhoto(img);
       img.onerror = () => toast("Couldn't read that image.");
       img.src = reader.result;
     };
@@ -547,11 +536,57 @@ function pickPhoto() {
   input.click();
 }
 
+// Drag to move, pinch or slide to zoom; the circle shows what you'll get.
+function cropPhoto(img) {
+  openSheet(`
+    <h2>📸 Frame your icon</h2>
+    <p class="sub">Drag the photo to move it, and use the slider to zoom. The circle is what other players see.</p>
+    <div id="cropbox"><div id="cropimg"></div><div id="cropmask"></div></div>
+    <label class="field">Zoom</label>
+    <input id="cropzoom" class="range" type="range" min="100" max="350" value="100">
+    <div class="btns"><button class="btn primary" id="crop-ok">Use this photo</button><button class="btn" id="crop-cancel">Cancel</button></div>
+  `, 'crop');
+  const box = $('#cropbox'), holder = $('#cropimg'), zoom = $('#cropzoom');
+  holder.appendChild(img);
+  const C = box.clientWidth || 280;
+  box.style.height = C + 'px';
+  const base = Math.max(C / img.naturalWidth, C / img.naturalHeight);
+  let z = 1, tx = 0, ty = 0;
+  const draw = () => {
+    const s = base * z, w = img.naturalWidth * s, h = img.naturalHeight * s;
+    const maxX = Math.max(0, (w - C) / 2), maxY = Math.max(0, (h - C) / 2);
+    tx = Math.max(-maxX, Math.min(maxX, tx)); ty = Math.max(-maxY, Math.min(maxY, ty));
+    img.style.width = w + 'px'; img.style.height = h + 'px';
+    img.style.left = (C / 2 - w / 2 + tx) + 'px'; img.style.top = (C / 2 - h / 2 + ty) + 'px';
+  };
+  draw();
+  let drag = null;
+  box.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, tx, ty }; box.setPointerCapture(e.pointerId); });
+  box.addEventListener('pointermove', (e) => { if (!drag) return; tx = drag.tx + (e.clientX - drag.x); ty = drag.ty + (e.clientY - drag.y); draw(); });
+  ['pointerup', 'pointercancel'].forEach((ev) => box.addEventListener(ev, () => (drag = null)));
+  zoom.oninput = () => { z = +zoom.value / 100; draw(); };
+  $('#crop-cancel').onclick = openProfile;
+  $('#crop-ok').onclick = () => {
+    const out = 160, c = document.createElement('canvas');
+    c.width = c.height = out;
+    const s = base * z;
+    // Map the visible square back onto the original photo.
+    const sx = (img.naturalWidth * s / 2 - C / 2 - tx) / s, sy = (img.naturalHeight * s / 2 - C / 2 - ty) / s;
+    c.getContext('2d').drawImage(img, sx, sy, C / s, C / s, 0, 0, out, out);
+    let data = c.toDataURL('image/jpeg', 0.8);
+    if (data.length > 220000) data = c.toDataURL('image/jpeg', 0.6);
+    upd({ photo: data });
+    toast('📸 Photo set as your icon', null, 2500);
+    openProfile();
+  };
+}
+
 function openProfile() {
   if (!S) return;
   const opt = (key, vals, swatch) => vals.map((v) => swatch
     ? `<button class="swatch ${S.look[key] === v ? 'sel' : ''}" style="background:${v}" data-k="${key}" data-v="${v}" aria-label="${v}"></button>`
-    : `<button class="opt ${S.look[key] === v ? 'sel' : ''}" data-k="${key}" data-v="${v}">${key === 'hair' && HAIR_STYLES[v] ? HAIR_STYLES[v].label : v}</button>`).join('');
+    : `<button class="opt ${S.look[key] === v ? 'sel' : ''}" data-k="${key}" data-v="${v}">${
+        key === 'hair' && HAIR_STYLES[v] ? HAIR_STYLES[v].label : key === 'top' && TOP_STYLES[v] ? TOP_STYLES[v].label : v}</button>`).join('');
   const gearOpts = ['hat', 'face', 'neck'].map((slot) => {
     const owned = Object.keys(S.bag || {}).filter((id) => ITEMS[id] && ITEMS[id].slot === slot && count(id) > 0);
     return `<button class="opt ${!S.equipped[slot] ? 'sel' : ''}" data-slot="${slot}" data-item="">No ${slot}</button>` +
@@ -579,7 +614,8 @@ function openProfile() {
     <label class="field">Skin</label><div class="opts">${opt('skin', AVATAR_OPTIONS.skin, true)}</div>
     <label class="field">Hair</label><div class="opts">${opt('hair', AVATAR_OPTIONS.hair)}</div>
     <label class="field">Hair color</label><div class="opts">${opt('hairColor', AVATAR_OPTIONS.hairColor, true)}</div>
-    <label class="field">Outfit</label><div class="opts">${opt('shirt', AVATAR_OPTIONS.shirt, true)}</div>
+    <label class="field">Top</label><div class="opts">${opt('top', AVATAR_OPTIONS.top)}</div>
+    <label class="field">Top color</label><div class="opts">${opt('shirt', AVATAR_OPTIONS.shirt, true)}</div>
     <label class="field">Icon background</label><div class="opts">${opt('bg', AVATAR_OPTIONS.bg, true)}</div>
     <label class="field">Gear (from treasures &amp; shops)</label><div class="opts">${gearOpts}</div>
     ${myParty().length ? `<p class="sub" style="margin-top:12px">🧑‍🤝‍🧑 In a party with <b>${myParty().map((u) => esc(others[u].name)).join(', ')}</b> until midnight — you fight together.
@@ -596,7 +632,7 @@ function openProfile() {
     // Update the picker in place so the avatar animation isn't cut off by a re-render.
     sheetBody.querySelectorAll(`[data-k="${k}"]`).forEach((o) => o.classList.toggle('sel', o.dataset.v === v));
     const head = $('#av') && $('#av').querySelector('.av-head');
-    if (head && (k === 'skin' || k === 'shirt' || k === 'bg')) head.innerHTML = avatarSVG(nextLook, S.equipped, { hair: 'none' });
+    if (head && k !== 'hair' && k !== 'hairColor') head.innerHTML = avatarSVG(nextLook, S.equipped, { hair: 'none' });
   }));
   sheetBody.querySelectorAll('[data-slot]').forEach((b) => (b.onclick = () => { upd({ ['equipped.' + b.dataset.slot]: b.dataset.item || null }); openProfile(); }));
   const lp2 = $('#leave-party'); if (lp2) lp2.onclick = () => leaveParty();

@@ -10,7 +10,7 @@ Sign up with a **character name + password + optional password hint**. No email,
 
 ## What's in it
 
-- **Character creator** — skin, hair, hair color, outfit, plus gear you find or buy. Your character is your map marker and battle portrait. You can also upload a photo to use as your icon instead; it's cropped square and shrunk to 128px (a few KB) before saving, and everyone playing can see it.
+- **Character creator** — skin, hair, hair color, outfit, plus gear you find or buy. Your character is your map marker and battle portrait. Tops include t-shirt, tank, long sleeve, hoodie, zip-up and jacket, and you pick the circle colour behind your character (light or dark). You can also upload a photo instead: you frame it yourself by dragging and zooming in a circular cropper, and it's saved at 160px (a couple of KB). Everyone playing can see it.
 - **Footprint trails** — 👣 emoji follow behind each player along the way they walked, fading out with age. Your icon stays at your current spot.
 - **Night map** — the map darkens from 7pm to 6am on the player's own clock.
 - **Local testing** — on localhost the app uses a fake in-browser backend so test accounts never touch the real database. Add `?live` to the URL to hit Firebase from localhost.

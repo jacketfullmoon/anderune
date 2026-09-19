@@ -53,12 +53,17 @@ const SHOPS = [
 ];
 
 const AVATAR_OPTIONS = {
-  skin: ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a1e'],
+  skin: ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a1e', '#3d2412'],
   hair: ['short', 'buzz', 'fade', 'side', 'messy', 'spiky', 'waves', 'curly', 'afro', 'bob', 'long', 'wavy', 'bun', 'pony', 'pigtails', 'braids', 'bald'],
-  hairColor: ['#1b1b1b', '#4a2a12', '#8b4513', '#e6b422', '#d9534f', '#6d28d9', '#e5e7eb'],
-  shirt: ['#3b82f6', '#ff5a4e', '#2fbf71', '#f59e0b', '#8b5cf6', '#06b6d4', '#1d1d27', '#ec4899'],
-  // the circle behind your character
-  bg: ['#cfe8ff', '#d7f5e3', '#ffe0cc', '#ece0ff', '#ffd9ec', '#f7edcd', '#a8e6e2', '#ffd6d6', '#dfe3ea', '#2b2450'],
+  top: ['tee', 'tank', 'longsleeve', 'hoodie', 'zip', 'jacket'],
+  hairColor: ['#0b0b0b', '#2b1a0e', '#4a2a12', '#6b3f1d', '#8b4513', '#a0522d', '#c68642', '#e6b422', '#f0d9a8',
+    '#d9534f', '#b91c1c', '#ec4899', '#6d28d9', '#2563eb', '#0ea5e9', '#059669', '#9ca3af', '#e5e7eb'],
+  shirt: ['#3b82f6', '#2563eb', '#0ea5e9', '#06b6d4', '#14b8a6', '#2fbf71', '#a3e635', '#facc15', '#f59e0b',
+    '#f97316', '#ff5a4e', '#e11d48', '#ec4899', '#f472b6', '#8b5cf6', '#7c3aed', '#78350f', '#64748b', '#334155', '#1d1d27'],
+  // the circle behind your character — light and dark
+  bg: ['#cfe8ff', '#d7f5e3', '#ffe0cc', '#ece0ff', '#ffd9ec', '#f7edcd', '#a8e6e2', '#ffd6d6', '#dfe3ea',
+    '#8fbcf0', '#6fc79a', '#f2b880', '#b79bf5', '#ff9ec4', '#d9b64e', '#5b7fa6', '#3f6b4f', '#8a4b2a',
+    '#4a2f7a', '#7a2f52', '#2b4a5e', '#2b2450', '#1f2937', '#12131a'],
 };
 
 // Ready-made quest lines. Players can also write their own (those live in the database).

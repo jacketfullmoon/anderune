@@ -47,6 +47,52 @@ const HAIR_STYLES = {
 
 // opts.hair: 'all' (default), 'none' (no hair), 'back' or 'front' (that hair layer only,
 // on a transparent canvas — used for the swipe animation in the character creator).
+// Clothing: hoodies, zip-ups and jackets, drawn from the shirt colour.
+function shade(hex, amt) {
+  const n = parseInt((hex || '#3b82f6').slice(1), 16);
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    .map((v) => Math.max(0, Math.min(255, Math.round(amt < 0 ? v * (1 + amt) : v + (255 - v) * amt))));
+  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+const BODY = 'M11 64 Q11 43 32 43 Q53 43 53 64Z';
+const TOP_STYLES = {
+  tee: { label: 'T-shirt', hood: () => '', body: (c) => `<path d="${BODY}" fill="${c}"/>
+    <path d="M26 43.5 Q32 49 38 43.5" fill="${shade(c, -0.25)}"/>` },
+  tank: { label: 'Tank top', hood: () => '',
+    body: (c, skin) => `<path d="${BODY}" fill="${skin}"/>
+      <path d="M22 64 Q22 45 32 45 Q42 45 42 64Z" fill="${c}"/>
+      <path d="M22 50 Q26 44 30 44 L30 47 Q26 47 24 52Z" fill="${c}"/>
+      <path d="M42 50 Q38 44 34 44 L34 47 Q38 47 40 52Z" fill="${c}"/>` },
+  longsleeve: { label: 'Long sleeve', hood: () => '',
+    body: (c) => `<path d="${BODY}" fill="${c}"/>
+      <path d="M11 64 Q11 47 18 44 L22 47 Q15 52 15 64Z" fill="${shade(c, -0.2)}"/>
+      <path d="M53 64 Q53 47 46 44 L42 47 Q49 52 49 64Z" fill="${shade(c, -0.2)}"/>
+      <path d="M26 43.5 Q32 48 38 43.5" fill="${shade(c, -0.3)}"/>` },
+  hoodie: { label: 'Hoodie',
+    hood: (c) => `<path d="M13 48 Q13 22 32 22 Q51 22 51 48 Q42 41 32 41 Q22 41 13 48Z" fill="${shade(c, -0.3)}"/>`,
+    body: (c) => `<path d="${BODY}" fill="${c}"/>
+      <path d="M19 44 Q24 57 32 57 Q40 57 45 44 Q38 42 32 42 Q26 42 19 44Z" fill="${shade(c, -0.22)}"/>
+      <path d="M28 55 L27 64" stroke="${shade(c, .55)}" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M36 55 L37 64" stroke="${shade(c, .55)}" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="27" cy="64" r="1.2" fill="${shade(c, .55)}"/><circle cx="37" cy="64" r="1.2" fill="${shade(c, .55)}"/>
+      <rect x="22" y="58" width="20" height="6" rx="2" fill="${shade(c, -0.12)}"/>` },
+  zip: { label: 'Zip-up', hood: () => '',
+    body: (c) => `<path d="${BODY}" fill="${c}"/>
+      <path d="M23 43 Q27 50 31 52 L31 64 L23 64Z" fill="${shade(c, -0.14)}"/>
+      <path d="M41 43 Q37 50 33 52 L33 64 L41 64Z" fill="${shade(c, -0.14)}"/>
+      <rect x="30.4" y="50" width="3.2" height="14" fill="${shade(c, -0.45)}"/>
+      <path d="M31 50 L33 50" stroke="${shade(c, .6)}" stroke-width="1"/>
+      <rect x="30.2" y="53" width="3.6" height="3" rx="1" fill="${shade(c, .55)}"/>
+      <path d="M24 43 Q32 48 40 43 Q36 41 32 41 Q28 41 24 43Z" fill="${shade(c, -0.3)}"/>` },
+  jacket: { label: 'Jacket', hood: () => '',
+    body: (c) => `<path d="${BODY}" fill="${shade(c, .55)}"/>
+      <path d="M11 64 Q11 43 24 43 Q28 52 28 64Z" fill="${shade(c, -0.1)}"/>
+      <path d="M53 64 Q53 43 40 43 Q36 52 36 64Z" fill="${shade(c, -0.1)}"/>
+      <path d="M24 43 L30 52 L26 55Z" fill="${shade(c, -0.35)}"/>
+      <path d="M40 43 L34 52 L38 55Z" fill="${shade(c, -0.35)}"/>
+      <circle cx="27" cy="59" r="1.1" fill="${shade(c, .5)}"/><circle cx="37" cy="59" r="1.1" fill="${shade(c, .5)}"/>` },
+};
+
 function avatarSVG(look, eq = {}, opts = {}) {
   const part = opts.hair || 'all';
   const hat = eq.hat, face = eq.face, neck = eq.neck;
@@ -73,9 +119,12 @@ function avatarSVG(look, eq = {}, opts = {}) {
   const wrap = (inner) => `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
   if (part === 'back') return wrap(style.back(hc));
   if (part === 'front') return wrap(hidesHair ? '' : style.front(hc));
+  const top = TOP_STYLES[look.top] || TOP_STYLES.tee;
+  const shirt = look.shirt || '#3b82f6', skin = look.skin || '#f1c27d';
   return wrap(`
     <rect x="0" y="0" width="64" height="64" fill="${look.bg || '#cfe8ff'}"/>
-    <path d="M11 64 Q11 43 32 43 Q53 43 53 64Z" fill="${look.shirt || '#3b82f6'}"/>
+    ${top.hood(shirt)}
+    ${top.body(shirt, skin)}
     <rect x="28" y="37" width="8" height="8" fill="${look.skin || '#f1c27d'}"/>
     ${part === 'all' ? style.back(hc) : ''}
     <circle cx="32" cy="28" r="14" fill="${look.skin || '#f1c27d'}"/>
