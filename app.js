@@ -712,8 +712,14 @@ function openFriends() {
   sheetBody.querySelectorAll('[data-acc]').forEach((b) => (b.onclick = () => acceptRequest(incoming.find((r) => r.id === b.dataset.acc))));
   sheetBody.querySelectorAll('[data-dec]').forEach((b) => (b.onclick = () => B.update(COL.req, b.dataset.dec, { status: 'declined' })));
   $('#share').onclick = async () => {
-    const url = location.origin;
-    try { if (navigator.share) await navigator.share({ title: 'Quest', text: 'Play Quest with me: make a character and find treasure around LA!', url }); else { await navigator.clipboard.writeText(url); toast('Link copied!', null, 2000); } } catch {}
+    const msg = `Join my party in Anderune! ${location.origin}`;
+    try {
+      if (navigator.share) await navigator.share({ text: msg });      // the link rides inside the text
+      else { await navigator.clipboard.writeText(msg); toast('Invite copied — paste it to a friend.', null, 3000); }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // they closed the share sheet
+      try { await navigator.clipboard.writeText(msg); toast('Invite copied — paste it to a friend.', null, 3000); } catch {}
+    }
   };
 }
 
