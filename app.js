@@ -697,11 +697,13 @@ function openFriends() {
   const all = Object.values(others);
   const friends = all.filter((p) => isFriend(p.id)).sort((a, b) => (b.seen || 0) - (a.seen || 0));
   const nearby = all.filter((p) => !isFriend(p.id) && online(p)).sort((a, b) => distM(myPos, a) - distM(myPos, b));
-  const reqs = incoming.filter((r) => r.kind === 'friend' && r.status === 'pending');
+  const reqs = incoming.filter((r) => ['friend', 'party', 'quest'].includes(r.kind) && r.status === 'pending');
   openSheet(`
-    ${reqs.length ? `<h2>📨 Friend requests</h2><div class="list">${reqs.map((r) => `
-      <div class="item"><div class="mini">${others[r.from] ? avatarOf(others[r.from]) : ''}</div><div class="grow"><b>${esc(r.fromName)}</b><span class="sub">wants to be friends</span></div>
-      <button class="btn primary" data-acc="${r.id}">Accept</button><button class="btn" data-dec="${r.id}">✕</button></div>`).join('')}</div>` : ''}
+    ${reqs.length ? `<h2>📨 Invites</h2><div class="list">${reqs.map((r) => `
+      <div class="item"><div class="mini">${others[r.from] ? avatarOf(others[r.from]) : ''}</div><div class="grow"><b>${esc(r.fromName)}</b><span class="sub">${
+        r.kind === 'friend' ? 'wants to be friends' : r.kind === 'party' ? 'asked if you want to join their party'
+        : 'invited you to “' + esc((questById(r.questId) || {}).title || 'a quest') + '”'}</span></div>
+      <button class="btn primary" data-acc="${r.id}">${r.kind === 'party' ? 'Yes' : 'Accept'}</button><button class="btn" data-dec="${r.id}">✕</button></div>`).join('')}</div>` : ''}
     <h2>🤝 Friends</h2>
     ${friends.length ? `<div class="list">${friends.map(row).join('')}</div>` : '<div class="empty">No friends yet. Tap a player on the map and add them.</div>'}
     <h3>📡 Players online</h3>
@@ -715,12 +717,30 @@ function openFriends() {
     const msg = `Join my party in Anderune! ${location.origin}`;
     try {
       if (navigator.share) await navigator.share({ text: msg });      // the link rides inside the text
-      else { await navigator.clipboard.writeText(msg); toast('Invite copied — paste it to a friend.', null, 3000); }
+      else { try { await navigator.clipboard.writeText(msg); toast('Invite copied — paste it to a friend.', null, 3000); } catch { showInviteText(msg); } }
     } catch (e) {
       if (e && e.name === 'AbortError') return; // they closed the share sheet
-      try { await navigator.clipboard.writeText(msg); toast('Invite copied — paste it to a friend.', null, 3000); } catch {}
+      try { await navigator.clipboard.writeText(msg); toast('Invite copied — paste it to a friend.', null, 3000); }
+      catch { showInviteText(msg); }
     }
   };
+}
+
+// If sharing and copying are both blocked, show the text so it can be copied by hand.
+function showInviteText(msg) {
+  openSheet(`
+    <h2>🔗 Invite a friend</h2>
+    <p class="sub">Copy this and send it however you like.</p>
+    <input class="text" id="invite-text" value="${esc(msg)}" readonly>
+    <div class="btns"><button class="btn primary" id="invite-copy">Copy</button><button class="btn" id="invite-done">Done</button></div>
+  `, 'invitetext');
+  const field = $('#invite-text');
+  field.focus(); field.setSelectionRange(0, field.value.length);
+  $('#invite-copy').onclick = () => {
+    field.select();
+    try { document.execCommand('copy'); toast('Copied!', null, 2000); } catch { toast('Press and hold the text to copy it.'); }
+  };
+  $('#invite-done').onclick = openFriends;
 }
 
 // ---------- requests ----------
@@ -731,8 +751,10 @@ async function sendRequest(uid, kind, extra = {}) {
   if (!(kind === 'trade' && sheetKind === 'talk')) closeSheet();
   const id = await B.add(COL.req, { from: ME, fromName: S.name, to: uid, toName: p.name, kind, status: 'pending', created: Date.now(), ...extra });
   if (kind === 'friend') toast(`🤝 Friend request sent to ${esc(p.name)}`, null, 2500);
-  const w = kind === 'friend' ? null : toast(`${KIND[kind][0]} Asked <b>${esc(p.name)}</b> to ${KIND[kind][1]}… waiting`, [['Cancel', '', () => B.update(COL.req, id, { status: 'cancelled' })]], 0);
-  const timer = kind === 'friend' ? null : setTimeout(() => B.update(COL.req, id, { status: 'expired' }).catch(() => {}), 60000);
+  const waitNote = kind === 'party' || kind === 'quest' ? ' — it waits 10 min for them' : '';
+  const w = kind === 'friend' ? null : toast(`${KIND[kind][0]} Asked <b>${esc(p.name)}</b> to ${KIND[kind][1]}…${waitNote}`, [['Cancel', '', () => B.update(COL.req, id, { status: 'cancelled' })]], 0);
+  const LIVE_FOR = { battle: 60000, talk: 60000, trade: 120000, party: 600000, quest: 600000 };
+  const timer = kind === 'friend' ? null : setTimeout(() => B.update(COL.req, id, { status: 'expired' }).catch(() => {}), LIVE_FOR[kind] || 60000);
   let un = null, done = false;
   un = B.watchDoc(COL.req, id, (r) => {
     if (!r || r.status === 'pending' || done) return;
@@ -753,7 +775,7 @@ const reqToasts = {};
 function onIncoming(list) {
   incoming = list;
   const pending = list.filter((r) => r.status === 'pending');
-  $('#friends-dot').classList.toggle('hidden', !pending.some((r) => r.kind === 'friend'));
+  $('#friends-dot').classList.toggle('hidden', !pending.some((r) => ['friend', 'party', 'quest'].includes(r.kind)));
   for (const [id, el] of Object.entries(reqToasts)) if (!pending.some((r) => r.id === id)) { el.remove(); delete reqToasts[id]; }
   // A party member just needs to be dropped into the same fight.
   pending.filter((r) => r.kind === 'joinbattle').forEach((r) => {
@@ -762,7 +784,9 @@ function onIncoming(list) {
   });
   pending.forEach((r) => {
     if (reqToasts[r.id] || r.shown || r.kind === 'joinbattle') return;
-    if (r.kind !== 'friend' && Date.now() - r.created > 90000) return;
+    const age = Date.now() - r.created;
+    if (!['friend', 'party', 'quest'].includes(r.kind) && age > 90000) return;
+    if ((r.kind === 'party' || r.kind === 'quest') && age > 600000) return;
     if (inBattle && r.kind === 'battle') return;
     const from = esc(r.fromName);
     const msg = r.kind === 'trade'
