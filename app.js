@@ -26,7 +26,7 @@ let realGps = false;
 let unsubs = [];
 
 const newPlayer = (name) => ({
-  name, look: { skin: '#f1c27d', hair: 'short', hairColor: '#4a2a12', shirt: '#3b82f6' },
+  name, look: { skin: '#f1c27d', hair: 'short', hairColor: '#4a2a12', shirt: '#3b82f6', bg: '#cfe8ff' },
   equipped: { hat: null, face: null, neck: null }, bag: { potion: 2 },
   coins: 120, hp: 34, lvl: 5, xp: 0, claimed: [], friends: [],
   stats: { battles: 0, wins: 0, treasures: 0, quests: 0 }, medals: [], quest: null,
@@ -580,6 +580,7 @@ function openProfile() {
     <label class="field">Hair</label><div class="opts">${opt('hair', AVATAR_OPTIONS.hair)}</div>
     <label class="field">Hair color</label><div class="opts">${opt('hairColor', AVATAR_OPTIONS.hairColor, true)}</div>
     <label class="field">Outfit</label><div class="opts">${opt('shirt', AVATAR_OPTIONS.shirt, true)}</div>
+    <label class="field">Icon background</label><div class="opts">${opt('bg', AVATAR_OPTIONS.bg, true)}</div>
     <label class="field">Gear (from treasures &amp; shops)</label><div class="opts">${gearOpts}</div>
     ${myParty().length ? `<p class="sub" style="margin-top:12px">🧑‍🤝‍🧑 In a party with <b>${myParty().map((u) => esc(others[u].name)).join(', ')}</b> until midnight — you fight together.
       <button class="sub" id="leave-party" style="text-decoration:underline">Leave party</button></p>` : ''}
@@ -595,7 +596,7 @@ function openProfile() {
     // Update the picker in place so the avatar animation isn't cut off by a re-render.
     sheetBody.querySelectorAll(`[data-k="${k}"]`).forEach((o) => o.classList.toggle('sel', o.dataset.v === v));
     const head = $('#av') && $('#av').querySelector('.av-head');
-    if (head && (k === 'skin' || k === 'shirt')) head.innerHTML = avatarSVG(nextLook, S.equipped, { hair: 'none' });
+    if (head && (k === 'skin' || k === 'shirt' || k === 'bg')) head.innerHTML = avatarSVG(nextLook, S.equipped, { hair: 'none' });
   }));
   sheetBody.querySelectorAll('[data-slot]').forEach((b) => (b.onclick = () => { upd({ ['equipped.' + b.dataset.slot]: b.dataset.item || null }); openProfile(); }));
   const lp2 = $('#leave-party'); if (lp2) lp2.onclick = () => leaveParty();

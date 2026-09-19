@@ -74,6 +74,7 @@ function avatarSVG(look, eq = {}, opts = {}) {
   if (part === 'back') return wrap(style.back(hc));
   if (part === 'front') return wrap(hidesHair ? '' : style.front(hc));
   return wrap(`
+    <rect x="0" y="0" width="64" height="64" fill="${look.bg || '#cfe8ff'}"/>
     <path d="M11 64 Q11 43 32 43 Q53 43 53 64Z" fill="${look.shirt || '#3b82f6'}"/>
     <rect x="28" y="37" width="8" height="8" fill="${look.skin || '#f1c27d'}"/>
     ${part === 'all' ? style.back(hc) : ''}

@@ -57,6 +57,8 @@ const AVATAR_OPTIONS = {
   hair: ['short', 'buzz', 'fade', 'side', 'messy', 'spiky', 'waves', 'curly', 'afro', 'bob', 'long', 'wavy', 'bun', 'pony', 'pigtails', 'braids', 'bald'],
   hairColor: ['#1b1b1b', '#4a2a12', '#8b4513', '#e6b422', '#d9534f', '#6d28d9', '#e5e7eb'],
   shirt: ['#3b82f6', '#ff5a4e', '#2fbf71', '#f59e0b', '#8b5cf6', '#06b6d4', '#1d1d27', '#ec4899'],
+  // the circle behind your character
+  bg: ['#cfe8ff', '#d7f5e3', '#ffe0cc', '#ece0ff', '#ffd9ec', '#f7edcd', '#a8e6e2', '#ffd6d6', '#dfe3ea', '#2b2450'],
 };
 
 // Ready-made quest lines. Players can also write their own (those live in the database).
