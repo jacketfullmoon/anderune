@@ -1,8 +1,9 @@
-// Static game data for the demo. In a real app this would come from a server.
+// Game data: items, treasure spots and shops. Players come from the database.
 
 const START = { lat: 34.0155, lng: -118.4945, label: 'Santa Monica' }; // near 3rd St Promenade
 const CLAIM_RADIUS_M = 60;   // how close you must be to open a chest
-const NEARBY_RADIUS_M = 500; // how close another player must be to interact
+const NEARBY_RADIUS_M = 500; // how close another player must be to battle (friends can chat from anywhere)
+const ONLINE_WINDOW_MS = 10 * 60 * 1000; // players seen within this window show on the map
 
 // Every item in the game. slot = where it goes on your avatar (or 'use' for consumables).
 const ITEMS = {
@@ -38,7 +39,7 @@ const TREASURES = [
 
 // Real-world places that act as in-game shops.
 const SHOPS = [
-  { id: 's_pharm',  name: 'Promenade Pharmacy',  ico: '💊', lat: 34.01648, lng: -118.49628, stock: ['potion', 'bigpotion', 'sunscreen'],
+  { id: 's_pharm',  name: 'Promenade Pharmacy',  ico: '🏪', lat: 34.01648, lng: -118.49628, stock: ['potion', 'bigpotion', 'sunscreen'],
     blurb: 'A drugstore on 3rd St Promenade. In the real product, partner stores (think a Rite Aid or CVS) could be sponsored shops.' },
   { id: 's_surf',   name: 'Pier Surf Shack',     ico: '🏄', lat: 34.00960, lng: -118.49700, stock: ['shades', 'cap', 'sunscreen'],
     blurb: 'Beach gear by the Santa Monica Pier.' },
@@ -46,25 +47,6 @@ const SHOPS = [
     blurb: 'Stock up before hitting Runyon Canyon.' },
   { id: 's_market', name: 'Main St Market',      ico: '🛒', lat: 34.00200, lng: -118.48660, stock: ['bigpotion', 'map', 'cap'],
     blurb: 'Snacks and supplies on Main Street.' },
-];
-
-// Simulated other players. Positions are offsets (meters) from wherever you are.
-const NPCS = [
-  { id: 'p_maya',  name: 'MayaRuns',   lvl: 7, hp: 34, atk: 7, def: 3, coins: 140,
-    look: { skin: '#8d5524', hair: 'long', hairColor: '#1b1b1b', shirt: '#ff5a4e', hat: 'cap',    face: null,        neck: null },
-    greet: 'hey! you doing the pier chest too?', tip: 'The Mt. Lee chest is worth the hike, go early before it gets hot.', offer: 'scarf', wants: 'potion' },
-  { id: 'p_dev',   name: 'DevOnWheels',lvl: 5, hp: 28, atk: 6, def: 2, coins: 90,
-    look: { skin: '#f1c27d', hair: 'spiky', hairColor: '#e6b422', shirt: '#2fbf71', hat: null,     face: 'shades',    neck: null },
-    greet: 'yo 🛹 wanna trade?', tip: 'Surf Shack sells shades for 80 coins, +1 attack.', offer: 'sunscreen', wants: 'shades' },
-  { id: 'p_luz',   name: 'LuzQuest',   lvl: 9, hp: 40, atk: 8, def: 4, coins: 220,
-    look: { skin: '#c68642', hair: 'bun',  hairColor: '#4a2a12', shirt: '#8b5cf6', hat: 'wizard', face: null,        neck: 'lantern' },
-    greet: 'greetings, traveler ✨', tip: 'Echo Mountain is brutal but the lantern gives +2 def.', offer: 'bigpotion', wants: 'crown' },
-  { id: 'p_sam',   name: 'SamTheHiker',lvl: 4, hp: 26, atk: 5, def: 2, coins: 60,
-    look: { skin: '#ffdbac', hair: 'short',hairColor: '#8b4513', shirt: '#f59e0b', hat: null,     face: null,        neck: 'bandana' },
-    greet: 'just got back from Runyon lol my legs', tip: 'Take the east ridge at Runyon, the chest is by the top bench.', offer: 'potion', wants: 'sunscreen' },
-  { id: 'p_kai',   name: 'Kai_Waves',  lvl: 6, hp: 30, atk: 7, def: 2, coins: 110,
-    look: { skin: '#e0ac69', hair: 'curly',hairColor: '#2b1a0e', shirt: '#06b6d4', hat: 'pirate', face: null,        neck: null },
-    greet: 'surf was flat today 🌊', tip: 'Trailhead Outfitters sells a Tip Map that points to hidden chests.', offer: 'cap', wants: 'map' },
 ];
 
 const AVATAR_OPTIONS = {

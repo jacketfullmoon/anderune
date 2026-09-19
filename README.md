@@ -1,37 +1,68 @@
-# QuestMap LA
+# Quest
 
-A demo of a real-world, location-based LARP game. Your GPS dot is your character. You walk to hard-to-reach spots around LA to open treasure chests, meet nearby players to battle or chat, and shop at real locations.
+A real-world, location-based LARP game. Your GPS dot is your character. Walk to hard-to-reach spots around LA to open treasure chests, meet other players in person to battle, chat or trade, and shop at real locations.
 
-## What's in the demo
+Plain HTML/CSS/JS — no build step. Multiplayer runs on Firebase (Auth + Firestore).
 
-- **Map + character**: Your custom avatar is your location marker. Tap 📍 to use real GPS; otherwise you're in demo mode in Santa Monica and can drag your character around.
-- **Treasure chests** at 7 LA spots: the Mt. Lee summit, Griffith Observatory, the top of Runyon Canyon, the end of Santa Monica Pier, Temescal Canyon falls, Parker Mesa Overlook and Echo Mountain. A chest only opens when you're within 60 m. Each one drops a wearable item and coins.
-- **Character creator**: Pick skin, hair, hair color and outfit. You can wear gear from treasures and shops (hats, face and neck items), and it changes your ATK and DEF.
-- **Nearby players**: Other players within 500 m can be sent a ⚔️ battle or 💬 talk request, and they can also send requests to you. In this demo they're simulated bots.
-- **Game Boy–style battles**: ATTACK / DEFEND / ACT / RUN. ACT includes TRUCE (offer to end the battle early), PRAISE (lowers their attack), PAY (buy your way out) and ITEM. If you lose, you forfeit 25% of your coins.
-- **Talk**: Chat, ask for tips, trade items and add friends.
-- **Shops** at real places, such as a pharmacy on 3rd St Promenade and a surf shack by the pier. You have to be there in person to buy.
+## Accounts
 
-Progress is saved in the browser (localStorage).
+Sign up with a **character name + password + optional password hint**. No email, same as the gas app: the name becomes a hidden fake address (`name@questmap.local`). On the Log In tab, "Forgot password? Show my hint" looks the hint up by name.
+
+## What's in it
+
+- **Character creator** — skin, hair, hair color, outfit, plus gear you find or buy. Your character is your map marker and battle portrait. You can also upload a photo to use as your icon instead; it's cropped square and shrunk to 128px (a few KB) before saving, and everyone playing can see it.
+- **Footprint trails** — 👣 emoji follow behind each player along the way they walked, fading out with age. Your icon stays at your current spot.
+- **Night map** — the map darkens from 7pm to 6am on the player's own clock.
+- **Treasure chests** at 7 real LA spots (Mt. Lee summit, Griffith Observatory, top of Runyon Canyon, end of Santa Monica Pier, Temescal Canyon falls, Parker Mesa Overlook, Echo Mountain). A chest opens only within 60 m. Each gives coins and a wearable item that changes your ATK/DEF.
+- **Live players** — everyone signed in shows on the map with their avatar while their location is fresh (10 min). Friends get a green ring.
+- **Requests** — ⚔️ battle or 💬 talk (within 500 m), 🤝 friend (any distance). The other person accepts or declines.
+- **Battles** — real turn-based PvP between two phones: **Attack / Defend / Act / Run**. Act covers Truce (end it early, both must agree), Praise (lowers their attack), Pay 30 coins, and Use item. Lose and you forfeit 25% of your coins to the winner.
+- **Talk** — live chat, item trades (both sides confirm), add friend.
+- **Shops** at real places; you must be there in person to buy.
+
+## Firebase setup (one time)
+
+1. Go to https://console.firebase.google.com/ and create a project (free Spark plan).
+2. **Build → Authentication → Get started → Sign-in method → Email/Password → Enable.**
+3. **Build → Firestore Database → Create database** (production mode, any region).
+4. In Firestore → **Rules**, paste this and Publish:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Name → hint lookup must work before login
+    match /qm_usernames/{name} {
+      allow read: if true;
+      allow create: if request.auth != null;
+    }
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+5. **Project settings → Your apps → Web app (`</>`)** → register an app → copy the `firebaseConfig` values into `FIREBASE_CONFIG` at the top of `backend.js`.
+6. Redeploy.
+
+Note: any signed-in player can write any player's data (that's how coins move at the end of a battle). Fine for playing with friends; a public launch would need server-side rules or Cloud Functions.
 
 ## Run locally
-
-It's plain HTML/CSS/JS with no build step:
 
 ```bash
 npx http-server . -p 5173
 ```
 
-GPS needs HTTPS or localhost.
+Without a Firebase config, localhost falls back to a fake in-browser backend so you can test with two tabs (each tab is a separate player). GPS needs https or localhost.
 
 ## Deploy
 
-It's a static site. Import the GitHub repo into Vercel with the default settings and no framework, or run `npx vercel --prod`.
+Static site. Import the repo into Vercel with no framework and default settings, or run `npx vercel --prod`.
 
-## Next steps for a real version
+## Privacy and safety notes for a real launch
 
-- A backend for real multiplayer: accounts, live player positions with a websocket/realtime database, and battles and trades resolved on the server so nobody can cheat.
-- GPS spoof protection, plus rules so chests can't be claimed from a car on the freeway.
-- Privacy: fuzz player locations, friends-only visibility, block/report, and age gating.
-- Safety review of treasure spots (trail conditions, closures, heat warnings).
-- Partnerships so real stores can become sponsored shops.
+- Player locations are visible to everyone signed in while the app is open. A real version needs friends-only visibility, fuzzed positions, block/report, and age gating.
+- GPS spoof protection, and rules so chests can't be claimed from a moving car.
+- Check treasure spots for trail conditions, closures and heat warnings.
+- Partnerships if real store brands are used as shops.

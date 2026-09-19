@@ -3,36 +3,63 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1b1f2a">
-<title>QuestMap LA</title>
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Quest</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 </head>
 <body>
 <div id="map"></div>
 
-<!-- Top HUD -->
-<header id="hud">
-  <button id="hud-avatar" class="hud-avatar" aria-label="Open profile"></button>
-  <div class="hud-info">
-    <div id="hud-name" class="hud-name">Traveler</div>
-    <div class="hud-bar"><div id="hud-hp" class="hud-hp"></div></div>
+<!-- Small status pill (coins + HP) -->
+<div id="stat-pill" class="hidden">
+  <span class="coin"></span><b id="hud-coins">0</b>
+  <span class="sep"></span>
+  <span class="heart">♥️</span><div class="hp-track"><div id="hud-hp"></div></div>
+</div>
+
+<!-- Round side buttons (gas-app style) -->
+<div id="side-btns" class="hidden">
+  <button id="btn-friends" class="side-btn" aria-label="Friends and players">🤝<span id="friends-dot" class="dot hidden"></span></button>
+  <button id="btn-bag" class="side-btn bag-btn" aria-label="Bag and items"><span class="ico-sub">🍗</span><span class="ico-main">🎒</span></button>
+  <button id="btn-profile" class="side-btn avatar" aria-label="My character"></button>
+</div>
+<button id="locate-btn" class="side-btn locate hidden" aria-label="Center on me">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+</button>
+<div id="loc-status" class="hidden"></div>
+
+<!-- Auth modal (same flow as the gas app: username + password + optional hint, no email) -->
+<div id="auth-modal" class="modal">
+  <div class="auth-card">
+    <div class="auth-logo">🗺️</div>
+    <h2 id="auth-title">Create your character</h2>
+    <div id="auth-tabs">
+      <button id="tab-create" class="auth-tab active">Create Account</button>
+      <button id="tab-login" class="auth-tab">Log In</button>
+    </div>
+    <input id="username-input" type="text" placeholder="Character name (e.g. TrailBoss_LA)" maxlength="20" autocomplete="username" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <input id="password-input" type="password" placeholder="Password" autocomplete="new-password" maxlength="100">
+    <input id="hint-input" type="text" placeholder="Password hint (optional, only you'll see it)" maxlength="80" autocomplete="off" autocorrect="off" spellcheck="false">
+    <p id="password-disclaimer">Make a completely original password! If you forget it, tap "Forgot password?" on the Log In tab to see your hint.</p>
+    <div id="username-hint">3–20 characters, letters/numbers/underscores only</div>
+    <button id="forgot-btn" type="button">Forgot password? Show my hint</button>
+    <div id="hint-reveal"></div>
+    <button id="auth-submit">Create Account</button>
   </div>
-  <div class="hud-coins"><span class="coin"></span><span id="hud-coins">0</span></div>
-</header>
+</div>
 
-<button id="locate-btn" class="fab" title="Use my real location">📍</button>
-<div id="loc-status" class="loc-status">Demo mode · Santa Monica</div>
-
-<!-- Bottom nav -->
-<nav id="nav">
-  <button data-tab="map" class="active"><span>🗺️</span>Map</button>
-  <button data-tab="bag"><span>🎒</span>Bag</button>
-  <button data-tab="profile"><span>🧑‍🎤</span>Me</button>
-  <button data-tab="friends"><span>🤝</span>Friends</button>
-</nav>
+<!-- Setup notice (deployed without Firebase config) -->
+<div id="setup-modal" class="modal hidden">
+  <div class="auth-card"><div class="auth-logo">🛠️</div><h2>Almost ready</h2>
+    <p class="sub">Quest isn't connected to its database yet. Add the Firebase config in <code>backend.js</code> and redeploy.</p></div>
+</div>
 
 <!-- Bottom sheet -->
 <div id="sheet-backdrop" class="sheet-backdrop hidden"></div>
@@ -41,40 +68,36 @@
   <div id="sheet-body"></div>
 </section>
 
-<!-- Toasts -->
 <div id="toasts"></div>
 
 <!-- Battle -->
 <section id="battle" class="battle hidden">
-  <div class="gb">
-    <div class="gb-screen">
-      <div class="bt-enemy">
-        <div class="bt-card">
-          <div class="bt-name" id="bt-enemy-name">RIVAL</div>
-          <div class="bt-lv" id="bt-enemy-lv">Lv5</div>
-          <div class="bt-hpline"><b>HP</b><div class="bt-bar"><div id="bt-enemy-hp"></div></div></div>
-        </div>
-        <div class="bt-sprite enemy" id="bt-enemy-sprite"></div>
-      </div>
-      <div class="bt-me">
-        <div class="bt-sprite me" id="bt-me-sprite"></div>
-        <div class="bt-card">
-          <div class="bt-name" id="bt-me-name">YOU</div>
-          <div class="bt-lv" id="bt-me-lv">Lv5</div>
-          <div class="bt-hpline"><b>HP</b><div class="bt-bar"><div id="bt-me-hp"></div></div></div>
-          <div class="bt-hpnum" id="bt-me-hpnum">30/30</div>
-        </div>
-      </div>
-      <div class="bt-box">
-        <div id="bt-text" class="bt-text"></div>
-        <div id="bt-menu" class="bt-menu"></div>
-      </div>
+  <div class="arena">
+    <div class="sun"></div>
+    <div class="cloud c1"></div><div class="cloud c2"></div>
+    <div class="bt-card enemy-card">
+      <div class="bt-nameline"><span id="bt-enemy-name">RIVAL</span><span class="bt-lv" id="bt-enemy-lv">Lv5</span></div>
+      <div class="bt-bar"><div id="bt-enemy-hp"></div></div>
+      <div class="bt-hpnum" id="bt-enemy-hpnum"></div>
     </div>
+    <div class="bt-spot enemy"><div class="platform"></div><div class="bt-sprite" id="bt-enemy-sprite"></div></div>
+    <div class="bt-spot me"><div class="platform"></div><div class="bt-sprite" id="bt-me-sprite"></div></div>
+    <div class="bt-card me-card">
+      <div class="bt-nameline"><span id="bt-me-name">YOU</span><span class="bt-lv" id="bt-me-lv">Lv5</span></div>
+      <div class="bt-bar"><div id="bt-me-hp"></div></div>
+      <div class="bt-hpnum" id="bt-me-hpnum">30/30</div>
+    </div>
+  </div>
+  <div class="bt-panel">
+    <div id="bt-text" class="bt-text"></div>
+    <div id="bt-menu" class="bt-menu"></div>
   </div>
 </section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="data.js"></script>
+<script src="avatar.js"></script>
+<script src="backend.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
