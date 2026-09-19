@@ -16,6 +16,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
+const BUILD = 14;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -229,12 +230,15 @@ function renderHud() {
   $('#hud-hp').style.width = pct + '%';
   $('#hud-hp').style.background = pct < 25 ? '#ef4444' : pct < 50 ? '#f5b82e' : '';
 }
-$('#btn-profile').onclick = openProfile;
-$('#btn-bag').onclick = openBag;
-$('#btn-friends').onclick = openFriends;
-$('#btn-search').onclick = () => openSearch('');
-$('#btn-stats').onclick = openStats;
-$('#btn-quests').onclick = openQuests;
+function safely(fn) {
+  return () => { try { fn(); } catch (e) { console.error(e); toast(`Something broke: ${esc(e.message)} (build ${BUILD})`, null, 8000); } };
+}
+$('#btn-profile').onclick = safely(openProfile);
+$('#btn-bag').onclick = safely(openBag);
+$('#btn-friends').onclick = safely(openFriends);
+$('#btn-search').onclick = safely(() => openSearch(''));
+$('#btn-stats').onclick = safely(openStats);
+$('#btn-quests').onclick = safely(openQuests);
 setInterval(() => { if (S && !inBattle && S.hp < maxHp()) upd({ hp: B.inc(1) }); }, 30000);
 
 // ---------- toasts ----------
@@ -603,7 +607,8 @@ function openProfile() {
         <div class="sub">Lv${S.lvl} · XP ${S.xp}/100</div>
         <div class="sub">HP ${S.hp}/${st.max} · ATK ${st.atk} · DEF ${st.def}</div>
         <div class="sub">🪙 ${S.coins} · 🤝 ${(S.friends || []).length} friends</div>
-        ${isAdmin(S) ? '<div style="margin-top:4px"><span class="pill">⭐ Anderune master</span></div>' : ''}</div>
+        ${isAdmin(S) ? '<div style="margin-top:4px"><span class="pill">⭐ Anderune master</span></div>' : ''}
+        <div class="sub" style="font-size:11px;opacity:.7">build ${BUILD}</div></div>
     </div>
     <label class="field">Icon</label>
     <div class="photo-row">
