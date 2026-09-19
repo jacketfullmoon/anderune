@@ -232,7 +232,7 @@ function renderHud() {
 $('#btn-profile').onclick = openProfile;
 $('#btn-bag').onclick = openBag;
 $('#btn-friends').onclick = openFriends;
-$('#btn-search').onclick = openSearch;
+$('#btn-search').onclick = () => openSearch('');
 $('#btn-stats').onclick = openStats;
 $('#btn-quests').onclick = openQuests;
 setInterval(() => { if (S && !inBattle && S.hp < maxHp()) upd({ hp: B.inc(1) }); }, 30000);
@@ -1173,8 +1173,8 @@ function resolveTurn(b, kind, arg, actor) {
 }
 
 // ---------- search ----------
-function openSearch(query = '') {
-  const q = query.trim().toLowerCase();
+function openSearch(query = '', keepFocus = false) {
+  const q = String(query || '').trim().toLowerCase();
   const hits = Object.values(others)
     .filter((p) => p.name && (!q || p.name.toLowerCase().includes(q)))
     .sort((a, b) => (online(b) - online(a)) || a.name.localeCompare(b.name))
@@ -1187,9 +1187,11 @@ function openSearch(query = '') {
         <span class="sub">Lv${p.lvl} · ${online(p) ? '🟢 ' + fmtDist(distM(myPos, p)) : '⚪ ' + ago(p.seen || 0)}${isFriend(p.id) ? ' · friend' : ''}</span></div>
       <button class="btn">View</button></div>`).join('')}</div>`
       : `<div class="empty">${q ? 'Nobody by that name yet.' : 'No other players yet. Invite your friends!'}</div>`}
-  `, 'search', () => openSearch($('#q') ? $('#q').value : query));
+  `, 'search', () => openSearch($('#q') ? $('#q').value : query, true));
   const input = $('#q');
-  input.oninput = () => { const v = input.value; clearTimeout(input._t); input._t = setTimeout(() => { openSearch(v); $('#q').focus(); }, 250); };
+  input.oninput = () => { const v = input.value; clearTimeout(input._t); input._t = setTimeout(() => openSearch(v, true), 250); };
+  input.focus({ preventScroll: true });          // pop the keyboard straight away
+  if (keepFocus) input.setSelectionRange(input.value.length, input.value.length);
   sheetBody.querySelectorAll('[data-see]').forEach((b) => (b.onclick = () => { const p = others[b.dataset.see]; if (online(p)) panTo(p); openPlayer(p.id); }));
 }
 
