@@ -32,7 +32,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 26;   // bump with each upload; shown in your profile
+const BUILD = 27;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -1011,7 +1011,7 @@ async function sendRequest(uid, kind, extra = {}) {
   if (kind === 'friend') toast(`🤝 Friend request sent to ${esc(p.name)}`, null, 2500);
   const waitNote = kind === 'party' || kind === 'quest' ? ' — it waits 10 min for them' : '';
   const w = kind === 'friend' ? null : toast(`${KIND[kind][0]} Asked <b>${esc(p.name)}</b> to ${KIND[kind][1]}…${waitNote}`, [['Cancel', '', () => B.update(COL.req, id, { status: 'cancelled' })]], 0);
-  const LIVE_FOR = { battle: 60000, talk: 60000, trade: 120000, party: 600000, quest: 600000 };
+  const LIVE_FOR = { battle: 120000, talk: 300000, trade: 180000, party: 600000, quest: 600000 };
   const timer = kind === 'friend' ? null : setTimeout(() => B.update(COL.req, id, { status: 'expired' }).catch(() => {}), LIVE_FOR[kind] || 60000);
   let un = null, done = false;
   un = B.watchDoc(COL.req, id, (r) => {
@@ -1043,7 +1043,8 @@ function onIncoming(list) {
   pending.forEach((r) => {
     if (reqToasts[r.id] || r.shown || r.kind === 'joinbattle') return;
     const age = Date.now() - r.created;
-    if (!['friend', 'party', 'quest'].includes(r.kind) && age > 90000) return;
+    if (!['friend', 'party', 'quest', 'talk'].includes(r.kind) && age > 120000) return;
+    if (r.kind === 'talk' && age > 300000) return;
     if ((r.kind === 'party' || r.kind === 'quest') && age > 600000) return;
     if (inBattle && r.kind === 'battle') return;
     const from = esc(r.fromName);
@@ -1054,6 +1055,12 @@ function onIncoming(list) {
       : r.kind === 'party' ? `🧑‍🤝‍🧑 <b>${from}</b> asked if you want to join their party.`
       : `${KIND[r.kind][0]} <b>${from}</b> wants to ${KIND[r.kind][1]}!`;
     SFX.play('ping');
+    const plain = {
+      talk: `${r.fromName} wants to talk`, battle: `${r.fromName} wants to battle you`,
+      party: `${r.fromName} asked you to join their party`, friend: `${r.fromName} sent a friend request`,
+      trade: `${r.fromName} offered you a trade`, quest: `${r.fromName} invited you to a quest`,
+    }[r.kind] || 'Someone wants you in Anderune';
+    NOTIFY.show('Anderune', plain, r.id);
     const yes = r.kind === 'party' ? 'Yes' : 'Accept', no = r.kind === 'party' ? 'No' : 'Decline';
     reqToasts[r.id] = toast(msg, [[yes, 'primary', () => { delete reqToasts[r.id]; acceptRequest(r); }],
       [no, '', () => { delete reqToasts[r.id]; B.update(COL.req, r.id, { status: 'declined' }); }]], 0);
@@ -2268,6 +2275,36 @@ function startTestBattle(kind) {
   onBattle(localB);
 }
 
+// ---------- notifications ----------
+// iPhones only allow these for an app added to the home screen, and only through a
+// service worker. Everything here is local: the phone alerts itself while Anderune is
+// running. Alerts when the app is fully closed need a push server (see the README).
+const NOTIFY = {
+  reg: null,
+  installed: () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true,
+  supported: () => 'serviceWorker' in navigator && 'Notification' in window,
+  state: () => (('Notification' in window) ? Notification.permission : 'unsupported'),
+  async register() {
+    if (!('serviceWorker' in navigator)) return null;
+    try { this.reg = await navigator.serviceWorker.register('sw.js'); return this.reg; } catch (e) { console.warn(e); return null; }
+  },
+  async ask() {
+    if (!this.supported()) return 'unsupported';
+    const res = await Notification.requestPermission();
+    if (res === 'granted') { await this.register(); this.show('🔔 Notifications on', 'This is what an alert looks like.'); }
+    return res;
+  },
+  async show(title, body, tag) {
+    if (this.state() !== 'granted') return;
+    const reg = this.reg || (await this.register()) || (await navigator.serviceWorker.getRegistration());
+    try {
+      if (reg && reg.showNotification) await reg.showNotification(title, { body, tag: tag || 'anderune', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' });
+      else new Notification(title, { body, tag, icon: 'icons/icon-192.png' });   // desktop fallback
+    } catch (e) { console.warn(e); }
+  },
+};
+if ('serviceWorker' in navigator) window.addEventListener('load', () => NOTIFY.register());
+
 // ---------- sound ----------
 // Everything here is synthesised on the fly — no audio files to download.
 const SFX = {
@@ -2361,6 +2398,10 @@ function openSettings() {
     </div>
     <label class="field">Music volume</label>
     <input class="range" id="mus-vol" type="range" min="0" max="100" value="${Math.round(p.musicVol * 100)}" ${p.music ? '' : 'disabled'}>
+    <div class="set-row">
+      <div><b>🔔 Notifications</b><div class="sub" id="notif-note">Get told when someone wants to talk, battle or party up.</div></div>
+      <button class="btn" id="notif-btn" style="flex:none;min-width:0">Enable</button>
+    </div>
     <h3>🗺️ Map style</h3>
     <div class="opts">
       <button class="opt ${MAP_PREFS.style === 'tidy' ? 'sel' : ''}" data-map="tidy">Anderune</button>
@@ -2384,6 +2425,19 @@ function openSettings() {
     toast('Saved — there\'s no music yet, but it\'ll use this when there is.', null, 3500);
   };
   musV.oninput = () => { SFX.prefs.musicVol = +musV.value / 100; SFX.save(); };
+  const nb = $('#notif-btn'), nn = $('#notif-note');
+  const paintNotif = () => {
+    const st = NOTIFY.state();
+    if (!NOTIFY.supported()) { nb.textContent = 'Not supported'; nb.disabled = true; nn.textContent = 'This browser has no notification support.'; return; }
+    if (st === 'granted') { nb.textContent = 'On'; nb.disabled = true; nn.textContent = 'Anderune can alert you while it\'s running.'; return; }
+    if (st === 'denied') { nb.textContent = 'Blocked'; nb.disabled = true; nn.textContent = 'Turn notifications back on for Anderune in your phone settings.'; return; }
+    nb.disabled = false; nb.textContent = 'Enable';
+    nn.textContent = NOTIFY.installed()
+      ? 'Get told when someone wants to talk, battle or party up.'
+      : 'On iPhone, add Anderune to your home screen first (Share → Add to Home Screen), then enable.';
+  };
+  paintNotif();
+  nb.onclick = async () => { await NOTIFY.ask(); paintNotif(); };
   sheetBody.querySelectorAll('[data-map]').forEach((b) => (b.onclick = () => {
     MAP_PREFS.style = b.dataset.map; saveMapPrefs(); applyMapTheme();
     sheetBody.querySelectorAll('[data-map]').forEach((o) => o.classList.toggle('sel', o === b));

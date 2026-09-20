@@ -34,6 +34,17 @@ Sign up with a **character name + password + optional password hint**. No email,
 - **Talk** — live chat, item trades (both sides confirm), add friend.
 - **Shops** at real places; you must be there in person to buy.
 
+## Notifications
+
+`sw.js` is a minimal service worker — iPhones only allow web notifications through one, and it's also where real push would arrive later. ⚙️ → Notifications asks permission, and incoming talk/battle/party/friend/trade/quest requests then raise a system notification as well as the in-app toast.
+
+Two limits worth knowing:
+
+1. **iOS only allows this for an installed app.** The other player has to add Anderune to their home screen (Share → Add to Home Screen) before the Enable button can do anything. In plain Safari the setting explains that instead.
+2. **These are local notifications.** The phone alerts itself while Anderune is running (foreground or recently backgrounded). Alerts when the app is fully closed need a push server holding VAPID keys — with Firebase that means Cloud Messaging plus a Cloud Function, which requires the paid Blaze plan. `sw.js` already has the `push` handler for that day.
+
+Talk requests now stay open for 5 minutes (battles 2, parties and quests 10) so someone has time to get their phone out.
+
 ## Sound
 
 All effects are synthesised with the Web Audio API at runtime — no audio files ship with the app. `SFX.play(name)` covers taps, sheet opens, swings, impacts, shields, heals, specials, coins, level ups, wins and losses. The ⚙️ gear on the map opens settings: sound effects on/off with its own volume, plus a music row that stores its setting for whenever a soundtrack exists. Settings live in `localStorage`, per device. iOS only allows audio after a tap, so the first touch anywhere unlocks it.
