@@ -32,7 +32,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 27;   // bump with each upload; shown in your profile
+const BUILD = 28;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -1171,6 +1171,28 @@ function openTalk(uid) {
 let inBattle = false, battleId = null, battleUnsub = null, curB = null, shownSeq = 0, animChain = Promise.resolve(), animating = false, waitTimer = null, acting = false;
 const bt = { text: $('#bt-text'), menu: $('#bt-menu') };
 $('#ar-toggle').onclick = () => toggleAR();
+$('#ar-compass').onclick = async () => {
+  const ok = await askOrientation();
+  updateCompassChip();
+  if (!ok || AR.heading == null) {
+    toast('Your phone is not sharing its compass. On iPhone: Settings → Safari → Motion & Orientation Access (or reinstall the home-screen app), then turn AR off and on. Until then, drag left or right to aim.', null, 10000);
+  }
+};
+// With no compass you can still place them by hand: drag the view to swing your aim.
+(function arDragAim() {
+  const arena = $('#arena');
+  arena.addEventListener('pointerdown', (e) => {
+    if (!AR.on || AR.heading != null || e.target.closest('button')) return;
+    AR.drag = { x: e.clientX, start: AR.manual };
+  });
+  arena.addEventListener('pointermove', (e) => {
+    if (!AR.drag) return;
+    const dx = e.clientX - AR.drag.x;
+    AR.manual = AR.drag.start - (dx / arena.clientWidth) * AR_HFOV;
+    placeFoe();
+  });
+  ['pointerup', 'pointercancel'].forEach((ev) => arena.addEventListener(ev, () => (AR.drag = null)));
+})();
 const alive = (b, u) => b.hp[u] > 0;
 const teamOf = (b, u) => b.teams[u];
 const foesOf = (b, u) => b.p.filter((x) => teamOf(b, x) !== teamOf(b, u) && alive(b, x));
@@ -2033,7 +2055,7 @@ function clearWild(id) {
 // ---------- AR mode ----------
 // The camera goes behind the fight, and the enemy is pinned to its real spot in the
 // world using the compass, so you can look away from it and find it again.
-const AR = { on: false, stream: null, video: null, raf: null, track: null, last: 0, heading: null, pitch: 0, tracking: false };
+const AR = { on: false, stream: null, video: null, raf: null, track: null, last: 0, heading: null, pitch: 0, tracking: false, manual: 0, drag: null };
 const AR_W = 190;          // camera is drawn this wide, then stretched — chunky but readable
 const AR_FPS = 24;
 const AR_LEVELS = 10;      // colour steps per channel
@@ -2062,16 +2084,39 @@ function foeSpot() {
 }
 function onOrient(e) {
   const h = e.webkitCompassHeading != null ? e.webkitCompassHeading
-    : (e.alpha != null ? (e.absolute ? 360 - e.alpha : 360 - e.alpha) : null);
+    : (e.alpha != null ? 360 - e.alpha : null);
   if (h != null && !Number.isNaN(h)) AR.heading = h;
   if (e.beta != null) AR.pitch = e.beta;
+  updateCompassChip();
   placeFoe();
+}
+// Tell the player plainly whether the phone is feeding us a compass.
+function updateCompassChip() {
+  const chip = $('#ar-compass');
+  if (!chip) return;
+  if (!AR.on) return chip.classList.add('hidden');
+  chip.classList.remove('hidden');
+  if (AR.heading != null) { chip.textContent = '🧭 Locked to the world'; chip.className = 'ok'; }
+  else { chip.textContent = '🧭 No compass — tap to fix, or drag to aim'; chip.className = 'warn'; }
 }
 // Put the enemy (and its buttons) where they belong on screen for the way you're facing.
 function placeFoe() {
   const anchor = $('#ar-anchor'), hint = $('#ar-hint'), arena = $('#arena');
   if (!AR.on || !anchor || !arena) return;
   const spot = foeSpot();
+  if (AR.heading == null && spot && myPos && AR.manual) {  // no compass, but they've aimed by hand
+    const w2 = arena.clientWidth;
+    const x2 = (-AR.manual / (AR_HFOV / 2)) * (w2 / 2);
+    anchor.style.setProperty('--ar-x', x2.toFixed(1) + 'px');
+    anchor.classList.toggle('gone', Math.abs(AR.manual) > AR_HFOV / 2 + 6);
+    hint.classList.toggle('hidden', Math.abs(AR.manual) <= AR_HFOV / 2 + 6);
+    if (!hint.classList.contains('hidden')) {
+      const nm = (curB && curB.names[curB.p.find((u) => u !== ME)]) || 'them';
+      hint.textContent = AR.manual > 0 ? `◀ ${nm} is this way` : `${nm} is this way ▶`;
+      hint.className = AR.manual > 0 ? 'left' : 'right';
+    }
+    return;
+  }
   if (AR.heading == null || !spot || !myPos) {           // no compass: just sit centred
     anchor.style.setProperty('--ar-x', '0px');
     anchor.style.setProperty('--ar-y', '0px');
@@ -2079,7 +2124,7 @@ function placeFoe() {
     return;
   }
   const w = arena.clientWidth, h = arena.clientHeight;
-  let delta = compassBearing(myPos, spot) - AR.heading;
+  let delta = compassBearing(myPos, spot) - AR.heading - AR.manual;
   while (delta > 180) delta -= 360;
   while (delta < -180) delta += 360;
   const x = (delta / (AR_HFOV / 2)) * (w / 2);
@@ -2106,6 +2151,7 @@ async function askOrientation() {
       if (res !== 'granted') return false;
     }
     window.addEventListener('deviceorientation', onOrient, true);
+    window.addEventListener('deviceorientationabsolute', onOrient, true);   // Android
     AR.tracking = true;
     return true;
   } catch { return false; }
@@ -2134,6 +2180,8 @@ async function toggleAR() {
   AR.on = true;
   // players move while you fight them, so keep re-checking where they are
   AR.track = setInterval(placeFoe, 500);
+  updateCompassChip();
+  setTimeout(updateCompassChip, 2500);
   btn.textContent = '📷 AR on'; btn.classList.add('on');
   $('#arena').classList.add('ar'); document.body.classList.add('ar');
   ['#ar-canvas', '#ar-glow', '#ar-anchor'].forEach((id) => $(id).classList.remove('hidden'));
@@ -2151,7 +2199,13 @@ function stopAR() {
   cancelAnimationFrame(AR.raf);
   if (AR.stream) AR.stream.getTracks().forEach((t) => t.stop());
   AR.stream = null; AR.video = null;
-  if (AR.tracking) { window.removeEventListener('deviceorientation', onOrient, true); AR.tracking = false; }
+  if (AR.tracking) {
+    window.removeEventListener('deviceorientation', onOrient, true);
+    window.removeEventListener('deviceorientationabsolute', onOrient, true);
+    AR.tracking = false;
+  }
+  AR.heading = null; AR.manual = 0;
+  const chip = $('#ar-compass'); if (chip) chip.classList.add('hidden');
   const btn = $('#ar-toggle');
   if (btn) { btn.textContent = '📷 AR'; btn.classList.remove('on'); }
   const arena = $('#arena');
@@ -2308,7 +2362,7 @@ if ('serviceWorker' in navigator) window.addEventListener('load', () => NOTIFY.r
 // ---------- sound ----------
 // Everything here is synthesised on the fly — no audio files to download.
 const SFX = {
-  ctx: null, out: null,
+  ctx: null, out: null, verb: null, comp: null,
   prefs: (() => {
     const d = { sfx: true, sfxVol: 0.7, music: false, musicVol: 0.5 };
     try { return { ...d, ...JSON.parse(localStorage.getItem('qm_sound') || '{}') }; } catch { return d; }
@@ -2319,58 +2373,96 @@ const SFX = {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     this.ctx = new AC();
+    // master chain: a gentle compressor keeps everything round rather than spiky
+    this.comp = this.ctx.createDynamicsCompressor();
+    this.comp.threshold.value = -18; this.comp.knee.value = 24; this.comp.ratio.value = 3;
     this.out = this.ctx.createGain();
     this.out.gain.value = this.prefs.sfxVol;
-    this.out.connect(this.ctx.destination);
+    this.out.connect(this.comp); this.comp.connect(this.ctx.destination);
+    // a small room, so notes bloom instead of stopping dead
+    const sec = 1.1, n = Math.floor(this.ctx.sampleRate * sec);
+    const buf = this.ctx.createBuffer(2, n, this.ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.6);
+    }
+    const conv = this.ctx.createConvolver(); conv.buffer = buf;
+    this.verb = this.ctx.createGain(); this.verb.gain.value = 0.32;
+    this.verb.connect(conv); conv.connect(this.out);
   },
   setVol(v) { this.prefs.sfxVol = v; if (this.out) this.out.gain.value = v; this.save(); },
-  // a single swept note
-  tone(type, f0, f1, dur, vol = 0.25, delay = 0) {
+  // one warm voice: soft attack, filtered, optional vibrato and reverb send
+  voice({ type = 'sine', f0, f1, dur = 0.3, vol = 0.2, delay = 0, attack = 0.012, cutoff = 4200, detune = 0, send = 0.3 }) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + delay;
-    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f0, t);
-    if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain(), lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.setValueAtTime(cutoff, t); lp.Q.value = 0.6;
+    o.type = type; o.detune.value = detune;
+    o.frequency.setValueAtTime(f0, t);
+    if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur * 0.9);
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.02, dur / 3));
+    g.gain.exponentialRampToValueAtTime(vol, t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(this.out); o.start(t); o.stop(t + dur + 0.02);
+    o.connect(lp); lp.connect(g); g.connect(this.out);
+    if (send > 0 && this.verb) { const sg = this.ctx.createGain(); sg.gain.value = send; g.connect(sg); sg.connect(this.verb); }
+    o.start(t); o.stop(t + dur + 0.05);
   },
-  // a puff of filtered noise — whooshes, impacts, shimmer
-  noise(dur, vol = 0.25, f0 = 1200, f1 = 400, delay = 0, q = 1) {
+  // a bell-ish note: fundamental plus a quieter octave and fifth
+  bell(f, dur = 0.5, vol = 0.16, delay = 0, send = 0.45) {
+    this.voice({ type: 'sine', f0: f, dur, vol, delay, cutoff: 6000, send });
+    this.voice({ type: 'sine', f0: f * 2, dur: dur * 0.6, vol: vol * 0.4, delay, cutoff: 7000, send });
+    this.voice({ type: 'triangle', f0: f * 1.5, dur: dur * 0.35, vol: vol * 0.18, delay, cutoff: 5000, send });
+  },
+  // air: filtered noise for whooshes, impacts and shimmer
+  air(dur = 0.25, vol = 0.2, f0 = 1800, f1 = 400, delay = 0, type = 'lowpass', q = 0.8, send = 0.25) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + delay, n = Math.floor(this.ctx.sampleRate * dur);
     const buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
     const src = this.ctx.createBufferSource(); src.buffer = buf;
-    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = q;
-    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(60, f1), t + dur);
-    const g = this.ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f); f.connect(g); g.connect(this.out); src.start(t); src.stop(t + dur + 0.02);
+    const f = this.ctx.createBiquadFilter(); f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(80, f1), t + dur);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.out);
+    if (send > 0 && this.verb) { const sg = this.ctx.createGain(); sg.gain.value = send; g.connect(sg); sg.connect(this.verb); }
+    src.start(t); src.stop(t + dur + 0.05);
+  },
+  chord(freqs, { dur = 0.5, vol = 0.14, spread = 0.055, type = 'triangle' } = {}) {
+    freqs.forEach((f, i) => {
+      this.voice({ type, f0: f, dur, vol, delay: i * spread, cutoff: 5200, send: 0.4 });
+      this.voice({ type: 'sine', f0: f * 2, dur: dur * 0.55, vol: vol * 0.3, delay: i * spread, send: 0.4 });
+    });
   },
   play(name) {
     if (!this.prefs.sfx) return;
     this.init();
     if (!this.ctx) return;
     switch (name) {
-      case 'tap':     this.tone('sine', 620, 880, 0.07, 0.16); break;
-      case 'sheet':   this.tone('sine', 380, 620, 0.12, 0.12); break;
-      case 'swing':   this.noise(0.16, 0.3, 2600, 700, 0, 0.8); break;
-      case 'hit':     this.noise(0.16, 0.34, 2400, 600, 0, 0.8);
-                      this.noise(0.14, 0.38, 320, 90, 0.11, 1.4);
-                      this.tone('square', 200, 60, 0.16, 0.22, 0.11); break;
-      case 'hurt':    this.tone('sawtooth', 240, 70, 0.22, 0.2); this.noise(0.18, 0.2, 700, 180, 0, 1.2); break;
-      case 'shield':  this.tone('triangle', 300, 900, 0.34, 0.2);
-                      this.tone('triangle', 306, 912, 0.34, 0.14, 0.02);
-                      this.noise(0.4, 0.12, 900, 2600, 0.05, 2); break;
-      case 'special': [660, 880, 1100, 1320, 1760].forEach((f, i) => this.tone('square', f, f * 1.02, 0.13, 0.17, i * 0.07));
-                      this.noise(0.5, 0.16, 1200, 4200, 0.1, 2.5); break;
-      case 'heal':    this.tone('sine', 700, 1050, 0.25, 0.18); this.tone('sine', 1050, 1400, 0.2, 0.1, 0.1); break;
-      case 'coin':    this.tone('square', 1180, 1180, 0.07, 0.18); this.tone('square', 1580, 1580, 0.12, 0.16, 0.07); break;
-      case 'win':     [523, 659, 784, 1047].forEach((f, i) => this.tone('triangle', f, f, 0.16, 0.22, i * 0.11)); break;
-      case 'lose':    [440, 370, 294, 220].forEach((f, i) => this.tone('sawtooth', f, f * 0.98, 0.2, 0.16, i * 0.12)); break;
-      case 'ping':    this.tone('sine', 880, 880, 0.09, 0.18); this.tone('sine', 1170, 1170, 0.12, 0.16, 0.1); break;
-      case 'level':   [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone('square', f, f, 0.14, 0.18, i * 0.08)); break;
+      case 'tap':     this.voice({ type: 'sine', f0: 760, f1: 900, dur: 0.13, vol: 0.13, cutoff: 3200, send: 0.25 });
+                      this.voice({ type: 'sine', f0: 1520, dur: 0.07, vol: 0.05, cutoff: 6000, send: 0.2 }); break;
+      case 'sheet':   this.voice({ type: 'sine', f0: 420, f1: 660, dur: 0.24, vol: 0.1, cutoff: 2600, send: 0.4 });
+                      this.air(0.26, 0.05, 900, 2600, 0, 'bandpass', 1.2, 0.4); break;
+      case 'swing':   this.air(0.24, 0.22, 900, 260, 0, 'lowpass', 1.1, 0.2); break;
+      case 'hit':     this.air(0.1, 0.2, 2200, 700, 0, 'bandpass', 1, 0.15);
+                      this.voice({ type: 'sine', f0: 170, f1: 55, dur: 0.24, vol: 0.32, attack: 0.004, cutoff: 900, send: 0.15 });
+                      this.voice({ type: 'triangle', f0: 320, f1: 140, dur: 0.16, vol: 0.14, attack: 0.004, cutoff: 1800, send: 0.2 }); break;
+      case 'hurt':    this.voice({ type: 'triangle', f0: 240, f1: 80, dur: 0.34, vol: 0.26, attack: 0.005, cutoff: 1100, send: 0.3 });
+                      this.air(0.2, 0.12, 600, 180, 0, 'lowpass', 1, 0.25); break;
+      case 'shield':  this.chord([392, 523.25, 659.25], { dur: 0.7, vol: 0.12, spread: 0.07 });
+                      this.air(0.6, 0.07, 1400, 4200, 0.04, 'bandpass', 1.6, 0.5); break;
+      case 'special': this.chord([523.25, 659.25, 783.99, 1046.5], { dur: 0.75, vol: 0.12, spread: 0.075 });
+                      this.bell(1568, 0.9, 0.1, 0.3); this.air(0.9, 0.08, 1800, 6000, 0.1, 'bandpass', 2, 0.6); break;
+      case 'heal':    this.bell(880, 0.75, 0.13); this.bell(1318.5, 0.6, 0.08, 0.12); break;
+      case 'coin':    this.bell(1318.5, 0.35, 0.12); this.bell(1975.5, 0.45, 0.1, 0.07); break;
+      case 'win':     this.chord([523.25, 659.25, 783.99], { dur: 0.8, vol: 0.13, spread: 0.09 });
+                      this.bell(1046.5, 1.1, 0.12, 0.28); break;
+      case 'lose':    this.chord([440, 349.23, 277.18], { dur: 0.7, vol: 0.12, spread: 0.13, type: 'sine' }); break;
+      case 'ping':    this.bell(1046.5, 0.4, 0.12); this.bell(1396.9, 0.5, 0.09, 0.1); break;
+      case 'level':   this.chord([523.25, 659.25, 783.99, 1046.5, 1318.5], { dur: 0.7, vol: 0.12, spread: 0.075 });
+                      this.air(0.8, 0.06, 2000, 6500, 0.15, 'bandpass', 2, 0.6); break;
     }
   },
 };

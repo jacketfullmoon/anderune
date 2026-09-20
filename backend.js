@@ -2,8 +2,16 @@
    On localhost without a config it falls back to a fake in-browser backend so the
    game can be tested with two tabs (each tab = a different signed-in player). */
 
-// ── PASTE YOUR FIREBASE CONFIG HERE ──────────────────────────────────
+// ── FIREBASE CONFIG ──────────────────────────────────────────────────
 // Firebase Console → Project settings → Your apps → Web app → SDK setup and configuration
+//
+// NOTE: this apiKey is NOT a secret. Google designs web API keys to ship inside the
+// page — it only identifies the project, it grants no access on its own. GitHub's
+// scanner flags any Google-shaped key, so expect an alert here; it's safe to close.
+// What actually protects the data is the Firestore rules (see README) plus Firebase
+// Auth. Lock the key to this site in Google Cloud Console → APIs & Services →
+// Credentials → the "Browser key" → Website restrictions, so nobody can point it at
+// their own site and burn your quota.
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyAkTiVh-E2qCvyZMHXCm2qWopWszFeRwQE',
   authDomain: 'anderune-5e8b5.firebaseapp.com',

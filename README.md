@@ -87,6 +87,18 @@ service cloud.firestore {
 5. **Project settings → Your apps → Web app (`</>`)** → register an app → copy the `firebaseConfig` values into `FIREBASE_CONFIG` at the top of `backend.js`.
 6. Redeploy.
 
+### About the GitHub "secret detected" alert
+
+GitHub flags the `apiKey` in `backend.js`. Firebase web API keys are meant to be public — they identify the project and grant nothing by themselves, so there is no secret to rotate. Close the alert in **Security → Secret scanning** with the reason **"Used in tests" / "False positive"**.
+
+Do lock the key down so it only works from your own site:
+
+1. https://console.cloud.google.com/apis/credentials (pick the `anderune-5e8b5` project)
+2. Click the **Browser key (auto created by Firebase)**
+3. **Application restrictions → Websites**, then add `anderune.vercel.app/*` and `localhost:5173/*`
+4. **API restrictions → Restrict key**, and allow only: Identity Toolkit API, Token Service API, Cloud Firestore API
+5. Save (it takes a few minutes to apply)
+
 Note: any signed-in player can write any player's data (that's how coins move at the end of a battle). Fine for playing with friends; a public launch would need server-side rules or Cloud Functions.
 
 ## Run locally

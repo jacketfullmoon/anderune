@@ -495,3 +495,10 @@ body.night #sky-body { filter: drop-shadow(0 0 7px rgba(170,200,255,.9)); }
 .mine-cell:active { transform: scale(.95); }
 .mine-cell.bad { border-color: #e11d48; box-shadow: 0 0 0 2px rgba(225,29,72,.5); }
 .mine-win { color: #86efac; font-weight: 700; font-size: 15px; }
+
+/* AR compass status */
+#ar-compass { position: absolute; z-index: 6; top: calc(var(--safe-t) + 56px); right: 12px; font-family: var(--fun);
+  font-size: 12px; font-weight: 700; padding: 7px 11px; border-radius: 999px; color: #fff;
+  background: rgba(17,17,17,.62); border: 1.5px solid rgba(255,255,255,.45); backdrop-filter: blur(4px); }
+#ar-compass.ok { background: rgba(22,163,74,.72); border-color: #86efac; }
+#ar-compass.warn { background: rgba(217,119,6,.78); border-color: #fde68a; }
