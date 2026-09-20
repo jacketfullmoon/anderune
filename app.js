@@ -32,7 +32,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 21;   // bump with each upload; shown in your profile
+const BUILD = 24;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -47,11 +47,23 @@ const newPlayer = (name) => ({
   equipped: { hat: null, face: null, neck: null }, bag: { potion: 2 },
   coins: 120, hp: 34, lvl: 5, xp: 0, claimed: [], friends: [],
   stats: { battles: 0, wins: 0, treasures: 0, quests: 0 }, medals: [], quest: null,
+  sp: 0, base: { atk: 0, def: 0, spec: 0, talk: 0 },
   photo: null, special: { name: '', emoji: '✨' },
   lat: null, lng: null, seen: Date.now(), created: Date.now(),
 });
 function gear(p, k) { return Object.values(p.equipped || {}).reduce((t, id) => t + ((id && ITEMS[id] && ITEMS[id][k]) || 0), 0); }
-const statsFor = (p) => ({ atk: 5 + Math.floor(p.lvl / 2) + gear(p, 'atk'), def: 1 + Math.floor(p.lvl / 3) + gear(p, 'def'), max: 24 + p.lvl * 2, lvl: p.lvl });
+const trained = (p, k) => ((p && p.base) || {})[k] || 0;
+const statsFor = (p) => ({
+  atk: 5 + Math.floor(p.lvl / 2) + gear(p, 'atk') + trained(p, 'atk'),
+  def: 1 + Math.floor(p.lvl / 3) + gear(p, 'def') + trained(p, 'def'),
+  max: 24 + p.lvl * 2 + trained(p, 'def') * 2,
+  spec: 1.6 + trained(p, 'spec') * 0.05,     // special attack multiplier
+  talk: trained(p, 'talk') * 0.04,           // better odds of talking your way out
+  lvl: p.lvl,
+});
+// XP for beating someone: bigger when they outrank you, small when you punch down.
+const xpFor = (foeLvl, myLvl) => Math.max(5, Math.round((10 + foeLvl * 5) * Math.min(2, Math.max(0.35, foeLvl / Math.max(1, myLvl)))));
+const xpNeeded = (lvl) => 80 + Math.max(0, lvl - 5) * 45;
 const maxHp = () => 24 + S.lvl * 2;
 const count = (id, p = S) => (p && p.bag && p.bag[id]) || 0;
 const isFriend = (uid) => !!(S && S.friends && S.friends.includes(uid));
@@ -121,13 +133,117 @@ function trailLayer(uid, p, opts) {
   return { markers, head: markers[markers.length - 1], remove() { markers.forEach((m) => m.remove()); } };
 }
 
+// ---------- map theme ----------
+// Same OpenStreetMap data, repainted. "Tidy" warms the map and hides the sidewalk
+// clutter so players, chests and monsters are the loudest things on screen.
+const MAP_PREFS = (() => {
+  try { return { style: 'tidy', ...JSON.parse(localStorage.getItem('qm_map') || '{}') }; } catch { return { style: 'tidy' }; }
+})();
+const saveMapPrefs = () => { try { localStorage.setItem('qm_map', JSON.stringify(MAP_PREFS)); } catch {} };
+const TIDY = {
+  day: { bg:'#f8f0df', land:'#f8f0df', res:'#f4ead6', park:'#8fe0ab', parkLine:'#4fb97a', water:'#86d8f2',
+    waterLine:'#4fb8dd', hospital:'#ffc9d4', school:'#ffe4a8', sand:'#ffeec2', bldg:'#ece2d2', bldgLine:'#cdbfa8',
+    motor:'#ffa552', trunk:'#ffc98a', second:'#ffe0b0', minor:'#ffffff', minorCase:'#e3d8c4',
+    rail:'#c9bdd8', text:'#3d3350', halo:'#ffffff', waterText:'#2d7d99', parkText:'#2f7a4d', boundary:'#d98aa8' },
+  night: { bg:'#151233', land:'#151233', res:'#1a1640', park:'#1e5a43', parkLine:'#2f9a6c', water:'#123a63',
+    waterLine:'#2f7fb0', hospital:'#5a2740', school:'#57451f', sand:'#3b3324', bldg:'#221d4c', bldgLine:'#3f3673',
+    motor:'#e8834a', trunk:'#b9763f', second:'#6a5a44', minor:'#4a4480', minorCase:'#2a2558',
+    rail:'#6d5f9e', text:'#efe9ff', halo:'#0d0a24', waterText:'#8fd8ff', parkText:'#7fe0a8', boundary:'#a8557a' },
+};
+const MAP_HIDE = /path|pedestrian|footway|cycle|sidewalk|steps|crossing|track/;
+let styleBackup = null;
+function backupStyle() {
+  if (styleBackup) return;
+  styleBackup = {};
+  map.getStyle().layers.forEach((l) => { styleBackup[l.id] = JSON.parse(JSON.stringify(l.paint || {})); });
+}
+function applyMapTheme() {
+  if (!map.isStyleLoaded()) return;
+  backupStyle();
+  const set = (id, prop, val) => { try { map.setPaintProperty(id, prop, val); } catch (e) {} };
+  const show = (id, on) => { try { map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); } catch (e) {} };
+  document.body.classList.toggle('classic-map', MAP_PREFS.style !== 'tidy');
+  if (MAP_PREFS.style !== 'tidy') {                       // put the original colours back
+    map.getStyle().layers.forEach((l) => {
+      show(l.id, true);
+      const p = styleBackup[l.id] || {};
+      Object.keys(p).forEach((k) => set(l.id, k, p[k]));
+      if (l.type === 'raster') set(l.id, 'raster-opacity', 1);
+    });
+    return;
+  }
+  const P = TIDY[isNight ? 'night' : 'day'];
+  map.getStyle().layers.forEach((l) => {
+    const id = l.id, t = l.type;
+    if (MAP_HIDE.test(id) && t !== 'fill') return show(id, false);   // sidewalks and footpaths
+    show(id, true);
+    if (t === 'background') return set(id, 'background-color', P.bg);
+    if (t === 'raster') return set(id, 'raster-opacity', 0);
+    if (t === 'fill-extrusion') { set(id, 'fill-extrusion-color', P.bldg); return set(id, 'fill-extrusion-opacity', .85); }
+    if (t === 'fill') {
+      if (/water|ocean/.test(id)) return set(id, 'fill-color', P.water);
+      if (/building/.test(id)) { set(id, 'fill-color', P.bldg); return set(id, 'fill-outline-color', P.bldgLine); }
+      if (/park|wood|grass|forest|pitch|golf|cemetery/.test(id)) return set(id, 'fill-color', P.park);
+      if (/hospital/.test(id)) return set(id, 'fill-color', P.hospital);
+      if (/school|university|college/.test(id)) return set(id, 'fill-color', P.school);
+      if (/sand|beach/.test(id)) return set(id, 'fill-color', P.sand);
+      if (/residential/.test(id)) return set(id, 'fill-color', P.res);
+      return set(id, 'fill-color', P.land);
+    }
+    if (t === 'line') {
+      if (/boundary|admin/.test(id)) { set(id, 'line-color', P.boundary); return set(id, 'line-opacity', .7); }
+      if (/waterway|river|stream|canal/.test(id)) return set(id, 'line-color', P.waterLine);
+      if (/park_outline/.test(id)) return set(id, 'line-color', P.parkLine);
+      if (/rail/.test(id)) return set(id, 'line-color', P.rail);
+      if (/casing|outline/.test(id)) return set(id, 'line-color', P.minorCase);
+      if (/motorway/.test(id)) return set(id, 'line-color', P.motor);
+      if (/trunk|primary/.test(id)) return set(id, 'line-color', P.trunk);
+      if (/secondary|tertiary/.test(id)) return set(id, 'line-color', P.second);
+      return set(id, 'line-color', P.minor);
+    }
+    if (t === 'symbol') {
+      if (/water|marine|ocean/.test(id)) { set(id, 'text-color', P.waterText); return set(id, 'text-halo-color', P.halo); }
+      if (/park/.test(id)) { set(id, 'text-color', P.parkText); return set(id, 'text-halo-color', P.halo); }
+      set(id, 'text-color', P.text); set(id, 'text-halo-color', P.halo); set(id, 'text-halo-width', 1.8);
+    }
+  });
+}
+map.on('load', applyMapTheme);
+map.on('styledata', () => { if (map.isStyleLoaded()) applyMapTheme(); });
+
 // Dark map after 7pm, back to daylight at 6am.
+// The sun climbs the arc through the day and the moon takes over at night —
+// so you can see at a glance how long you have before it flips.
+const DAY_START = 6, NIGHT_START = 19;
+function updateSkyArc() {
+  const arc = $('#sky-arc'), body = $('#sky-body');
+  if (!arc || arc.classList.contains('hidden')) return;
+  const now = new Date(), h = now.getHours() + now.getMinutes() / 60;
+  const night = h >= NIGHT_START || h < DAY_START;
+  const t = night
+    ? ((h >= NIGHT_START ? h - NIGHT_START : h + 24 - NIGHT_START) / (24 - NIGHT_START + DAY_START))
+    : (h - DAY_START) / (NIGHT_START - DAY_START);
+  const f = Math.max(0, Math.min(1, t));
+  // walk the same shallow arc the SVG draws: circle centred below the bar
+  const cx = 80, r = 110, cy = 50 + Math.sqrt(r * r - 70 * 70);
+  const a0 = Math.atan2(50 - cy, 10 - cx), a1 = Math.atan2(50 - cy, 150 - cx);
+  const ang = a0 + f * (a1 - a0);
+  const x = cx + Math.cos(ang) * r, y = cy + Math.sin(ang) * r;
+  body.textContent = night ? '🌙' : '☀️';
+  body.style.left = (x / 160) * 100 + '%';
+  body.style.top = (y / 54) * 100 + '%';
+  arc.title = night ? 'Sunrise at 6am' : 'Nightfall at 7pm';
+}
+setInterval(updateSkyArc, 30000);
+
 let isNight = null;
 function updateNight() {
   const h = new Date().getHours(), night = h >= 19 || h < 6;
   if (night === isNight) return;
   isNight = night;
   document.body.classList.toggle('night', night);
+  applyMapTheme();
+  updateSkyArc();
 }
 updateNight();
 setInterval(updateNight, 60000);
@@ -162,6 +278,7 @@ setInterval(() => pushPos(false), 20000);
 
 function setPos(p, pan = true) {
   myPos = { lat: p.lat, lng: p.lng };
+  if (restStops.length) { renderStops(); fetchStops(false); }
   pushPos(false);
   renderMe();
   if (pan) panTo(p);
@@ -268,6 +385,13 @@ $('#btn-search').onclick = safely(() => openSearch(''));
 $('#btn-stats').onclick = safely(openStats);
 $('#btn-quests').onclick = safely(openQuests);
 $('#btn-settings').onclick = safely(openSettings);
+$('#sky-arc').onclick = () => {
+  const now = new Date(), h = now.getHours() + now.getMinutes() / 60;
+  const night = h >= NIGHT_START || h < DAY_START;
+  const until = night ? (h >= NIGHT_START ? 24 - h + DAY_START : DAY_START - h) : NIGHT_START - h;
+  const hrs = Math.floor(until), mins = Math.round((until - hrs) * 60);
+  toast(night ? `🌙 Night. Sunrise in ${hrs}h ${mins}m.` : `☀️ Daytime. Nightfall in ${hrs}h ${mins}m.`, null, 4000);
+};
 setInterval(() => { if (S && !inBattle && S.hp < maxHp()) upd({ hp: B.inc(1) }); }, 30000);
 
 // ---------- toasts ----------
@@ -433,12 +557,15 @@ function startSession(uid) {
     S = d;
     if (firstLoad) {
       firstLoad = false;
-      ['#side-btns', '#stat-pill', '#locate-btn', '#btn-settings'].forEach((s) => $(s).classList.remove('hidden'));
+      ['#side-btns', '#stat-pill', '#locate-btn', '#btn-settings', '#sky-arc'].forEach((s) => $(s).classList.remove('hidden'));
+      updateSkyArc();
       myPos = S.lat != null ? { lat: S.lat, lng: S.lng } : { lat: START.lat, lng: START.lng };
       myTrail = Array.isArray(S.trail) ? S.trail : [];
       renderMe(); jumpTo(myPos, 16);
       pushPos(true);
       keepWilds();
+      if (loadStopCache()) renderStops();
+      fetchStops(false);
       startGps(false);
       if (justCreated) { justCreated = false; openProfile(); toast(`👋 Welcome, ${esc(S.name)}! Style your character, then go explore.`, null, 7000); }
     }
@@ -463,19 +590,27 @@ function endSession() {
   for (const k in playerMarkers) delete playerMarkers[k];
   if (meLayer) { meLayer.remove(); meLayer = null; meKey = ''; }
   myTrail = [];
-  ['#side-btns', '#stat-pill', '#locate-btn', '#btn-settings'].forEach((s) => $(s).classList.add('hidden'));
+  ['#side-btns', '#stat-pill', '#locate-btn', '#btn-settings', '#sky-arc'].forEach((s) => $(s).classList.add('hidden'));
   Object.values(reqToasts).forEach((el) => el.remove());
   setStatus(''); closeSheet();
 }
 let leveling = false;
 function onMyChange() {
   if (!S) return;
-  // Keep data tidy: level up at 100 XP, unequip items you no longer own.
-  if (S.xp >= 100 && !leveling) {
-    leveling = true; const lv = S.lvl + Math.floor(S.xp / 100);
+  // Level ups: each one grants 2 stat points, plus a point or two on its own.
+  if (S.xp >= xpNeeded(S.lvl) && !leveling) {
+    leveling = true;
+    let lv = S.lvl, xp = S.xp, sp = S.sp || 0, levels = 0, gAtk = 0, gDef = 0;
+    while (xp >= xpNeeded(lv) && levels < 20) {
+      xp -= xpNeeded(lv); lv++; levels++; sp += 2;
+      gAtk += randi(0, 1); gDef += randi(0, 1);
+    }
     SFX.play('level');
-    toast(`⭐ Level up! You're now Lv${lv}.`);
-    upd({ xp: S.xp % 100, lvl: lv, hp: 24 + lv * 2 }); leveling = false;
+    toast(`⭐ Level up! You're now Lv${lv}. +${levels * 2} stat points to spend` +
+      (gAtk || gDef ? ` (and +${gAtk} ATK, +${gDef} DEF on your own).` : '.'), null, 7000);
+    upd({ xp, lvl: lv, sp, hp: 24 + lv * 2 + (trained(S, 'def') + gDef) * 2,
+      'base.atk': trained(S, 'atk') + gAtk, 'base.def': trained(S, 'def') + gDef });
+    leveling = false;
   }
   for (const [slot, id] of Object.entries(S.equipped || {})) if (id && count(id) <= 0) upd({ ['equipped.' + slot]: null });
   renderHud(); renderMe(); renderChests(); renderQuestMarker();
@@ -526,6 +661,7 @@ function checkProximity() {
   if (!S || sheetKind || inBattle) return;
   checkQuestStep();
   checkWilds();
+  checkRest();
   TREASURES.forEach((t) => {
     if (!(S.claimed || []).includes(t.id) && distM(myPos, t) <= CLAIM_RADIUS_M && !nudged.has(t.id)) {
       nudged.add(t.id);
@@ -670,12 +806,27 @@ function openProfile() {
         <div class="av-layer av-head">${avatarSVG(S.look, S.equipped, { hair: 'none' })}</div>
         <div class="av-layer av-front">${avatarSVG(S.look, S.equipped, { hair: 'front' })}</div>`}</div>
       <div><h2>${esc(S.name)}</h2>
-        <div class="sub">Lv${S.lvl} · XP ${S.xp}/100</div>
+        <div class="sub">Lv${S.lvl} · XP ${S.xp}/${xpNeeded(S.lvl)}</div>
+        <div class="xpbar"><div style="width:${Math.min(100, (S.xp / xpNeeded(S.lvl)) * 100)}%"></div></div>
         <div class="sub">HP ${S.hp}/${st.max} · ATK ${st.atk} · DEF ${st.def}</div>
         <div class="sub">🪙 ${S.coins} · 🤝 ${(S.friends || []).length} friends</div>
         ${isAdmin(S) ? '<div style="margin-top:4px"><span class="pill">⭐ Anderune master</span></div>' : ''}
         <div class="sub" style="font-size:11px;opacity:.7">build ${BUILD}</div></div>
     </div>
+    ${(S.sp || 0) > 0 ? `<div class="sp-box">
+      <b>🎯 ${S.sp} stat point${S.sp > 1 ? 's' : ''} to spend</b>
+      <div class="sub">Put them wherever you like — they're yours for good.</div>
+      <div class="sp-grid">
+        <button class="btn" data-sp-add="atk">⚔️ Attack <small>+1</small></button>
+        <button class="btn" data-sp-add="def">🛡️ Defense <small>+1</small></button>
+        <button class="btn" data-sp-add="spec">✨ Special <small>+1</small></button>
+        <button class="btn" data-sp-add="talk">💬 Negotiate <small>+1</small></button>
+      </div></div>` : ''}
+    <h3>📊 Stats</h3>
+    <div class="statline"><span>⚔️ Attack</span><b>${st.atk}</b><span class="sub">${trained(S, 'atk')} trained</span></div>
+    <div class="statline"><span>🛡️ Defense</span><b>${st.def}</b><span class="sub">${trained(S, 'def')} trained</span></div>
+    <div class="statline"><span>✨ Special power</span><b>×${st.spec.toFixed(2)}</b><span class="sub">${trained(S, 'spec')} trained</span></div>
+    <div class="statline"><span>💬 Negotiate</span><b>+${Math.round(st.talk * 100)}%</b><span class="sub">${trained(S, 'talk')} trained</span></div>
     <label class="field">Icon</label>
     <div class="photo-row">
       <button class="btn" id="photo-btn">📸 ${S.photo ? 'Change photo' : 'Use a photo'}</button>
@@ -715,6 +866,13 @@ function openProfile() {
     if (head && k !== 'hair' && k !== 'hairColor') head.innerHTML = avatarSVG(nextLook, S.equipped, { hair: 'none' });
   }));
   sheetBody.querySelectorAll('[data-slot]').forEach((b) => (b.onclick = () => { upd({ ['equipped.' + b.dataset.slot]: b.dataset.item || null }); openProfile(); }));
+  sheetBody.querySelectorAll('[data-sp-add]').forEach((b) => (b.onclick = () => {
+    if ((S.sp || 0) <= 0) return;
+    const k = b.dataset.spAdd;
+    upd({ sp: S.sp - 1, ['base.' + k]: trained(S, k) + 1, ...(k === 'def' ? { hp: Math.min(24 + S.lvl * 2 + (trained(S, 'def') + 1) * 2, S.hp + 2) } : {}) });
+    SFX.play('level');
+    openProfile();
+  }));
   const tp = $('#test-player'); if (tp) tp.onclick = () => startTestBattle('player');
   const tm = $('#test-monster'); if (tm) tm.onclick = () => startTestBattle('monster');
   const spName = $('#sp-name');
@@ -1249,7 +1407,7 @@ function resolveTurn(b, kind, arg, actor) {
       if (special && (b.specUsed || {})[X]) return null;          // one per battle
       const wpn = beast ? { label: 'lunge', emoji: '🐾', dmg: 1, crit: 0.1 } : (WEAPONS[wid] || WEAPONS.sword);
       const spec = (b.special || {})[X] || {};
-      const mult = special ? 1.6 : wpn.dmg;
+      const mult = special ? (X === ME ? statsFor(S).spec : 1.6) : wpn.dmg;
       let dmg = Math.max(1, Math.round((st[X].atk + randi(-2, 3) - st[Y].def) * mult));
       const crit = Math.random() < (special ? 0.2 : wpn.crit); if (crit) dmg = Math.round(dmg * 1.6);
       const blocked = def[Y]; if (blocked) dmg = Math.max(1, Math.floor(dmg / 2));
@@ -1307,7 +1465,7 @@ function resolveTurn(b, kind, arg, actor) {
     done = { how: ranAway ? 'fled' : 'ko', winners, losers };
     if (!ranAway) {
       if (b.ai) {
-        const prize = b.prize || 50, xp = b.xp || 40;
+        const prize = b.prize || 50, xp = b.xp || xpFor(st[Y] ? st[Y].lvl : S.lvl, S.lvl);
         if (winners.includes(ME)) {
           lines.push(`You won ${prize} coins and ${xp} XP!`);
           extra[ME].coins = B.inc(prize); extra[ME].xp = B.inc(xp); extra[ME]['stats.wins'] = B.inc(1);
@@ -1322,7 +1480,12 @@ function resolveTurn(b, kind, arg, actor) {
         let pot = 0;
         losers.forEach((u) => { const pay = Math.floor(coinsOf(u) * 0.25); pot += pay; extra[u].coins = B.inc(-pay); extra[u].hp = Math.ceil(st[u].max / 2); });
         const share = Math.floor(pot / winners.length);
-        winners.forEach((u) => { extra[u].coins = B.inc(share); extra[u].xp = B.inc(35); extra[u]['stats.wins'] = B.inc(1); });
+        const loserLvl = Math.max(...losers.map((u) => st[u].lvl));
+        winners.forEach((u) => {
+          extra[u].coins = B.inc(share);
+          extra[u].xp = B.inc(xpFor(loserLvl, st[u].lvl));
+          extra[u]['stats.wins'] = B.inc(1);
+        });
         const wName = winners.map((u) => n[u]).join(' and ');
         lines.push(pot ? (winners.length > 1 ? `${wName} split ${pot} coins — ${share} each!` : `${wName} won ${pot} coins!`) : `${wName} wins!`);
       }
@@ -1671,6 +1834,12 @@ function applyLocal(r) {
 function aiMove() {
   if (!localB || localB.status !== 'active' || localB.turn !== AI) return;
   if (animating) return setTimeout(aiMove, 400);
+  if (localB.truce && localB.truce !== AI) {                 // they're deciding on your truce
+    const hurt = 1 - localB.hp[AI] / localB.st[AI].max;
+    const chance = 0.12 + 0.5 * hurt + statsFor(S).talk;
+    const r0 = resolveTurn(localB, Math.random() < chance ? 'truce-yes' : 'truce-no', null, AI);
+    return r0 ? applyLocal(r0) : setTimeout(aiMove, 400);
+  }
   const lowHp = localB.hp[AI] / localB.st[AI].max < 0.3;
   const roll = Math.random();
   const kind = lowHp && roll < 0.35 ? 'defend' : roll < 0.78 ? 'attack' : roll < 0.9 ? 'defend' : 'praise';
@@ -1692,21 +1861,51 @@ function leaveParty() {
 // ---------- wild monsters ----------
 // They roam near you so there's always something to fight, even with nobody else online.
 let wilds = [], wildCooldown = 0;
+// Is this spot out on the water? Only answerable for places currently drawn on screen.
+function waterLayers() {
+  try { return map.getStyle().layers.filter((l) => l.type === 'fill' && /water|ocean/.test(l.id)).map((l) => l.id); }
+  catch { return []; }
+}
+function isWaterAt(pos) {
+  if (!map.isStyleLoaded()) return null;
+  const layers = waterLayers();
+  if (!layers.length) return null;
+  const p = map.project(LL(pos)), c = map.getCanvas();
+  if (p.x < 4 || p.y < 4 || p.x > c.clientWidth - 4 || p.y > c.clientHeight - 4) return null;  // off screen, can't tell
+  try { return map.queryRenderedFeatures([p.x, p.y], { layers }).length > 0; } catch { return null; }
+}
+// Turn a land monster into something that had no business being out there.
+function makeSeaMonster(w) {
+  const t = SEA_TYPES[randi(0, SEA_TYPES.length - 1)];
+  const lvl = S.lvl + SEA_LEVEL_GAP + randi(0, 5);
+  return Object.assign(w, t, {
+    lvl, sea: true,
+    hp: Math.round(10 + lvl * t.hpMul), atk: Math.round(2 + lvl * t.atkMul), def: Math.round(1 + lvl * t.defMul),
+    coins: 6 + lvl * 4, xp: xpFor(lvl, S.lvl),
+  });
+}
 function spawnWild(near) {
   const t = WILD_TYPES[randi(0, WILD_TYPES.length - 1)];
   const lvl = Math.max(2, S.lvl + randi(-2, 1));
   const ang = rand(0, Math.PI * 2), dist = rand(70, 320);
   const pos = { lat: near.lat + (Math.sin(ang) * dist) / 111320,
                 lng: near.lng + (Math.cos(ang) * dist) / (111320 * Math.cos(near.lat * Math.PI / 180)) };
-  return {
-    id: 'w' + Math.random().toString(36).slice(2, 8), ...t, lvl,
+  const w = {
+    id: 'w' + Math.random().toString(36).slice(2, 8), ...t, lvl, sea: false, checked: false,
     hp: Math.round(10 + lvl * t.hpMul), atk: Math.round(2 + lvl * t.atkMul), def: Math.round(1 + lvl * t.defMul),
-    coins: 6 + lvl * 3, xp: 10 + lvl * 2, pos, marker: null,
+    coins: 6 + lvl * 3, xp: xpFor(lvl, S.lvl), pos, marker: null,
   };
+  const water = isWaterAt(pos);
+  if (water !== null) { w.checked = true; if (water) makeSeaMonster(w); }
+  return w;
 }
 function renderWilds() {
   wilds.forEach((w) => {
-    const html = `<div class="mk mk-wild"><div class="wild-face">${w.emoji}</div>
+    if (!w.checked) {                       // it spawned off screen — settle it once it's visible
+      const water = isWaterAt(w.pos);
+      if (water !== null) { w.checked = true; if (water) { makeSeaMonster(w); if (w.marker) { w.marker.remove(); w.marker = null; } } }
+    }
+    const html = `<div class="mk mk-wild ${w.sea ? 'sea' : ''}"><div class="wild-face">${w.emoji}</div>
       <div class="mk-label">${esc(w.name)} Lv${w.lvl}</div></div>`;
     if (!w.marker) w.marker = marker(html, w.pos, { onClick: () => openWild(w) });
     else w.marker.setLngLat(LL(w.pos));
@@ -1734,7 +1933,9 @@ function checkWilds() {
   const near = wilds.find((w) => distM(w.pos, myPos) <= WILD_RADIUS_M && !wildNudged.has(w.id));
   if (!near) return;
   wildNudged.add(near.id);
-  toast(`${near.emoji} A <b>${esc(near.name)}</b> (Lv${near.lvl}) is right here!`,
+  toast(near.sea
+    ? `${near.emoji} <b>${esc(near.name)}</b> (Lv${near.lvl}) is out on the water. Way out of your league.`
+    : `${near.emoji} A <b>${esc(near.name)}</b> (Lv${near.lvl}) is right here!`,
     [['Fight it', 'primary', () => openWild(near)], ['Leave it', '', null]], 0);
 }
 function openWild(w) {
@@ -1744,6 +1945,7 @@ function openWild(w) {
       <div><h2>${esc(w.name)}</h2><span class="lvl">Lv ${w.lvl}</span>
       <span class="pill ${close ? 'ok' : 'far'}">${close ? 'Right here' : fmtDist(d) + ' away'}</span></div></div>
     <p>${esc(w.flavor)}</p>
+    ${w.sea ? `<p class="danger">☠️ Lv ${w.lvl} — that's ${w.lvl - S.lvl} levels above you, out on the water. It will almost certainly kill you.</p>` : ''}
     <p class="sub">HP ${w.hp} · ATK ${w.atk} · DEF ${w.def} · beats you for ${w.coins} coins and ${w.xp} XP.</p>
     <div class="btns"><button class="btn primary" id="fight" ${close ? '' : 'disabled'}>⚔️ Fight it</button>
       <button class="btn" id="later">Leave it alone</button></div>
@@ -1783,7 +1985,7 @@ function clearWild(id) {
 // ---------- AR mode ----------
 // The camera goes behind the fight, and the enemy is pinned to its real spot in the
 // world using the compass, so you can look away from it and find it again.
-const AR = { on: false, stream: null, video: null, raf: null, last: 0, heading: null, pitch: 0, tracking: false };
+const AR = { on: false, stream: null, video: null, raf: null, track: null, last: 0, heading: null, pitch: 0, tracking: false };
 const AR_W = 190;          // camera is drawn this wide, then stretched — chunky but readable
 const AR_FPS = 24;
 const AR_LEVELS = 10;      // colour steps per channel
@@ -1800,7 +2002,14 @@ function compassBearing(from, to) {
 function foeSpot() {
   if (localB && localB.wildId) { const w = wilds.find((x) => x.id === localB.wildId); if (w) return w.pos; }
   if (localB && localB.questId) { const q = questById(localB.questId); if (q && S.quest) return q.steps[S.quest.step]; }
-  if (curB) { const o = curB.p.find((u) => u !== ME && curB.teams[u] !== curB.teams[ME]); const p = others[o]; if (p && p.lat != null) return p; }
+  if (curB) {
+    // the nearest enemy still standing, using wherever they actually are right now
+    const foes = curB.p
+      .filter((u) => curB.teams[u] !== curB.teams[ME] && curB.hp[u] > 0)
+      .map((u) => others[u])
+      .filter((p) => p && p.lat != null && Date.now() - (p.seen || 0) < ONLINE_WINDOW_MS);
+    if (foes.length && myPos) return foes.sort((a, b) => distM(myPos, a) - distM(myPos, b))[0];
+  }
   return null;
 }
 function onOrient(e) {
@@ -1875,6 +2084,8 @@ async function toggleAR() {
   AR.video.playsInline = true; AR.video.muted = true; AR.video.srcObject = AR.stream;
   await AR.video.play().catch(() => {});
   AR.on = true;
+  // players move while you fight them, so keep re-checking where they are
+  AR.track = setInterval(placeFoe, 500);
   btn.textContent = '📷 AR on'; btn.classList.add('on');
   $('#arena').classList.add('ar'); document.body.classList.add('ar');
   ['#ar-canvas', '#ar-glow', '#ar-anchor'].forEach((id) => $(id).classList.remove('hidden'));
@@ -1888,6 +2099,7 @@ async function toggleAR() {
 }
 function stopAR() {
   AR.on = false;
+  clearInterval(AR.track); AR.track = null;
   cancelAnimationFrame(AR.raf);
   if (AR.stream) AR.stream.getTracks().forEach((t) => t.stop());
   AR.stream = null; AR.video = null;
@@ -2108,6 +2320,12 @@ function openSettings() {
     </div>
     <label class="field">Music volume</label>
     <input class="range" id="mus-vol" type="range" min="0" max="100" value="${Math.round(p.musicVol * 100)}" ${p.music ? '' : 'disabled'}>
+    <h3>🗺️ Map style</h3>
+    <div class="opts">
+      <button class="opt ${MAP_PREFS.style === 'tidy' ? 'sel' : ''}" data-map="tidy">Anderune</button>
+      <button class="opt ${MAP_PREFS.style === 'classic' ? 'sel' : ''}" data-map="classic">Classic</button>
+    </div>
+    <p class="sub">Anderune warms the map and hides sidewalk clutter. Classic is the plain street map.</p>
     <div class="btns"><button class="btn" id="sfx-test">▶️ Test sound</button><button class="btn primary" id="set-done">Done</button></div>
     <p class="sub" style="margin-top:12px">build ${BUILD}</p>
   `, 'settings');
@@ -2125,6 +2343,104 @@ function openSettings() {
     toast('Saved — there\'s no music yet, but it\'ll use this when there is.', null, 3500);
   };
   musV.oninput = () => { SFX.prefs.musicVol = +musV.value / 100; SFX.save(); };
+  sheetBody.querySelectorAll('[data-map]').forEach((b) => (b.onclick = () => {
+    MAP_PREFS.style = b.dataset.map; saveMapPrefs(); applyMapTheme();
+    sheetBody.querySelectorAll('[data-map]').forEach((o) => o.classList.toggle('sel', o === b));
+  }));
   $('#sfx-test').onclick = () => { SFX.play('special'); setTimeout(() => SFX.play('win'), 500); };
   $('#set-done').onclick = closeSheet;
+}
+
+// ---------- bus stops: rest and repair ----------
+// Real stops, pulled from OpenStreetMap around wherever you are, cached for a day.
+const REST_RADIUS_M = 35;
+const REST_COOLDOWN = 4 * 60 * 1000;
+let restStops = [], restMarkers = {}, restedAt = {}, lastStopFetch = { t: 0, p: null };
+
+function loadStopCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem('qm_stops') || 'null');
+    if (c && Date.now() - c.t < 24 * 3600 * 1000) { restStops = c.stops || []; return true; }
+  } catch {}
+  return false;
+}
+async function fetchStops(force) {
+  if (!myPos) return;
+  if (!force && lastStopFetch.p && distM(lastStopFetch.p, myPos) < 1200 && Date.now() - lastStopFetch.t < 6 * 3600 * 1000) return;
+  lastStopFetch = { t: Date.now(), p: { ...myPos } };
+  const q = `[out:json][timeout:20];(node["highway"="bus_stop"](around:2000,${myPos.lat},${myPos.lng});` +
+            `node["public_transport"="platform"]["bus"="yes"](around:2000,${myPos.lat},${myPos.lng}););out body 120;`;
+  // the main Overpass server is often busy, so fall through a few mirrors
+  const MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter', 'https://overpass.osm.ch/api/interpreter'];
+  try {
+    let data = null;
+    for (const url of MIRRORS) {
+      try {
+        const res = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q) });
+        if (!res.ok) continue;
+        data = await res.json();
+        if (data) break;
+      } catch (e) { /* try the next mirror */ }
+    }
+    if (!data) throw new Error('no overpass mirror answered');
+    const seen = new Set();
+    restStops = (data.elements || []).filter((e) => e.lat && e.lon).map((e) => ({
+      id: 's' + e.id, lat: e.lat, lng: e.lon, name: (e.tags && (e.tags.name || e.tags.ref)) || 'Bus stop',
+    })).filter((s) => { const k = s.lat.toFixed(5) + s.lng.toFixed(5); if (seen.has(k)) return false; seen.add(k); return true; });
+    try { localStorage.setItem('qm_stops', JSON.stringify({ t: Date.now(), stops: restStops })); } catch {}
+    renderStops();
+  } catch (e) { console.warn('bus stops unavailable', e); }
+}
+function renderStops() {
+  if (!myPos) return;
+  // only the handful you could actually walk to, or the map turns into a wall of signs
+  const near = restStops
+    .filter((s) => distM(myPos, s) < 700)
+    .sort((a, b) => distM(myPos, a) - distM(myPos, b))
+    .slice(0, 10);
+  near.forEach((s) => {
+    if (restMarkers[s.id]) return;
+    restMarkers[s.id] = marker(`<div class="mk mk-rest"><span class="rest-bus">🚏</span><span class="rest-cross">✚</span></div>`,
+      s, { onClick: () => openRest(s) });
+  });
+  Object.keys(restMarkers).forEach((id) => {
+    if (near.some((s) => s.id === id)) return;
+    restMarkers[id].remove(); delete restMarkers[id];
+  });
+}
+function openRest(s) {
+  const d = distM(myPos, s), here = d <= REST_RADIUS_M;
+  const cool = Math.max(0, (restedAt[s.id] || 0) + REST_COOLDOWN - Date.now());
+  const full = S.hp >= maxHp();
+  openSheet(`
+    <div class="row"><div style="font-size:42px">🚏</div>
+      <div><h2>${esc(s.name)}</h2>
+      <span class="pill ${here ? 'ok' : 'far'}">${here ? 'You are here' : fmtDist(d) + ' away'}</span>
+      <span class="pill">✚ Rest stop</span></div></div>
+    <p>Sit down on the bench a minute. Resting here patches you all the way up.</p>
+    <p class="sub">HP ${S.hp}/${maxHp()}${cool ? ` · rested recently, ready again in ${Math.ceil(cool / 60000)} min` : ''}</p>
+    <div class="btns">
+      <button class="btn primary" id="rest" ${here && !cool && !full ? '' : 'disabled'}>✚ ${full ? 'Already full' : 'Rest and repair'}</button>
+      <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}&travelmode=walking">Directions</a>
+    </div>
+    ${here ? '' : '<p class="sub">Walk to the stop to rest.</p>'}
+  `, 'rest', () => openRest(s));
+  const r = $('#rest');
+  if (r) r.onclick = () => {
+    if (distM(myPos, s) > REST_RADIUS_M) return;
+    restedAt[s.id] = Date.now();
+    upd({ hp: maxHp() });
+    SFX.play('heal');
+    toast(`✚ Rested at ${esc(s.name)} — back to ${maxHp()}/${maxHp()} HP.`, null, 4000);
+    closeSheet();
+  };
+}
+const restNudged = new Set();
+function checkRest() {
+  if (!S || sheetKind || inBattle || S.hp >= maxHp()) return;
+  const s = restStops.find((x) => distM(myPos, x) <= REST_RADIUS_M && !restNudged.has(x.id));
+  if (!s) return;
+  restNudged.add(s.id);
+  toast(`🚏 A rest stop — patch yourself up here?`, [['✚ Rest', 'primary', () => openRest(s)], ['Later', '', null]], 8000);
 }

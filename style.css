@@ -32,7 +32,7 @@ code { background: var(--surface); padding: 1px 5px; border-radius: 5px; }
 .maplibregl-ctrl-bottom-right { margin-bottom: calc(var(--safe-b) + 4px); }
 
 /* ── Status pill ─────────────────────────────── */
-#stat-pill { position: fixed; z-index: 500; top: calc(var(--safe-t) + 12px); left: 50%; transform: translateX(-50%);
+#stat-pill { position: fixed; z-index: 500; top: calc(var(--safe-t) + 56px); left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; gap: 7px; padding: 7px 13px; background: var(--bg); border-radius: 999px; box-shadow: var(--shadow); font-size: 14px; }
 .coin { width: 15px; height: 15px; border-radius: 50%; background: var(--gold); border: 2px solid #b8860b; display: inline-block; }
 .sep { width: 1px; height: 16px; background: var(--border); margin: 0 3px; }
@@ -262,7 +262,7 @@ input.text, select.text, #username-input, #password-input, #hint-input {
 
 /* ── Night mode (after 7pm) ──────────────────── */
 body.night #map { background: #0d1117; }
-body.night .maplibregl-canvas { filter: invert(1) hue-rotate(185deg) brightness(.92) contrast(.92) saturate(.75); }
+body.night.classic-map .maplibregl-canvas { filter: invert(1) hue-rotate(185deg) brightness(.92) contrast(.92) saturate(.75); }
 body.night .side-btn { background: #241f36; color: #e9dfff; }
 body.night .mk-label { box-shadow: 0 1px 4px rgba(0,0,0,.7); }
 body.night .mk-poi { filter: drop-shadow(0 0 5px rgba(255,255,255,.55)) drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
@@ -452,3 +452,38 @@ body.ar .bt-text { text-shadow: 0 2px 6px rgba(0,0,0,.9); }
 .switch.on i { left: 24px; }
 .switch:disabled { opacity: .4; }
 .soon { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 999px; background: rgba(255,255,255,.16); margin-left: 6px; }
+
+/* XP + stat points */
+.xpbar { height: 7px; border-radius: 4px; background: rgba(0,0,0,.35); overflow: hidden; margin: 4px 0 6px; max-width: 170px; }
+.xpbar div { height: 100%; background: linear-gradient(90deg,#fbbf24,#f59e0b); border-radius: 4px; transition: width .4s; }
+.sp-box { border: 1.5px solid #fbbf24; background: rgba(251,191,36,.14); border-radius: 14px; padding: 12px; margin: 14px 0 4px; }
+.sp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.sp-grid .btn { min-width: 0; padding: 10px 6px; font-size: 14px; }
+.sp-grid .btn small { opacity: .75; font-weight: 600; }
+.statline { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(203,184,255,.2); font-size: 14px; }
+.statline b { margin-left: auto; font-size: 16px; }
+.statline .sub { min-width: 74px; text-align: right; font-size: 11px; }
+
+/* bus stop rest points */
+.mk-rest { position: relative; font-size: 30px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); cursor: pointer; }
+.rest-cross { position: absolute; right: -7px; top: -4px; font-size: 12px; color: #fff; background: #16a34a;
+  width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid #fff; font-weight: 800; }
+
+/* Day / night arc — the sun crosses it by day, the moon by night */
+#sky-arc { position: fixed; z-index: 499; top: calc(var(--safe-t) + 4px); left: 50%; transform: translateX(-50%);
+  width: 160px; height: 54px; pointer-events: auto; cursor: pointer;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)); }
+#sky-arc svg { width: 100%; height: 100%; display: block; }
+#sky-body { position: absolute; font-size: 19px; line-height: 1; transform: translate(-50%, -50%);
+  transition: left .6s linear, top .6s linear; filter: drop-shadow(0 0 6px rgba(255,220,140,.8)); }
+body.night #sky-arc svg path:first-child { stroke: rgba(180,200,255,.5); }
+body.night #sky-body { filter: drop-shadow(0 0 7px rgba(170,200,255,.9)); }
+
+/* ocean monsters: obviously out of your league */
+.mk-wild.sea .wild-face { font-size: 38px; filter: drop-shadow(0 0 10px rgba(255,60,90,.9)) drop-shadow(0 3px 4px rgba(0,0,0,.5));
+  animation: prowl 2s ease-in-out infinite; }
+.mk-wild.sea .mk-label { background: #b91c1c; box-shadow: 0 0 10px rgba(255,60,90,.6); }
+.mk-wild.sea::after { content: '☠️'; position: absolute; top: -8px; right: -12px; font-size: 15px; }
+.danger { background: rgba(225,29,72,.18); border: 1.5px solid #fb7185; border-radius: 12px; padding: 10px 12px;
+  font-size: 14px; color: #ffd9e0; margin: 10px 0; }

@@ -83,6 +83,17 @@ const WEAPONS = {
 };
 const SPECIAL_EMOJI = ['✨', '🔥', '⚡', '💥', '🌪️', '🌊', '❄️', '☄️', '🪄', '💫', '🩸', '🦴', '🎸', '🛹', '🌮', '☕', '🧃', '📸', '💀', '🌵'];
 
+// Things that spawn out on the water. You are not supposed to win these.
+const SEA_TYPES = [
+  { kind: 'shark',  emoji: '🦈', name: 'Kelp Shark',    hpMul: 3.4, atkMul: 1.1, defMul: 0.3,
+    flavor: 'It has been circling past the breakers since before the pier was built.' },
+  { kind: 'kraken', emoji: '🐙', name: 'Bay Kraken',    hpMul: 4.0, atkMul: 1.0, defMul: 0.5,
+    flavor: 'Something the size of a bus is moving under the swell.' },
+  { kind: 'serpent',emoji: '🐍', name: 'Channel Serpent', hpMul: 3.0, atkMul: 1.3, defMul: 0.25,
+    flavor: 'The lifeguards have a name for this one and they do not say it out loud.' },
+];
+const SEA_LEVEL_GAP = 20;   // how far above you an ocean monster always is
+
 const WILD_RADIUS_M = 80;   // how close you must be to start a wild fight
 const WILD_COUNT = 3;       // how many roam near you at once
 
