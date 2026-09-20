@@ -66,6 +66,18 @@ const AVATAR_OPTIONS = {
     '#4a2f7a', '#7a2f52', '#2b4a5e', '#2b2450', '#1f2937', '#12131a'],
 };
 
+// Wild monsters that roam the map so you can level up when nobody else is online.
+const WILD_TYPES = [
+  { kind: 'bear',  emoji: '🐻', name: 'Mean Grizzly', hpMul: 3.0, atkMul: 0.8, defMul: 0.25,
+    flavor: 'It has been going through the trash cans and it is not sorry.' },
+  { kind: 'robot', emoji: '🤖', name: 'Rusted Bot',   hpMul: 2.2, atkMul: 0.6, defMul: 0.6,
+    flavor: 'An old delivery bot, still looping its route, now with opinions.' },
+  { kind: 'coyote',emoji: '🐺', name: 'Alley Coyote', hpMul: 1.9, atkMul: 0.95, defMul: 0.2,
+    flavor: 'Trots down the middle of the street like it pays rent.' },
+];
+const WILD_RADIUS_M = 80;   // how close you must be to start a wild fight
+const WILD_COUNT = 3;       // how many roam near you at once
+
 // Ready-made quest lines. Players can also write their own (those live in the database).
 const BUILTIN_QUESTS = [
   {

@@ -316,3 +316,34 @@ body.in-battle #toasts { display: none; }
 #cropbox::after { content: ''; position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; transform: translate(-50%,-50%);
   border-radius: 50%; border: 2px solid rgba(255,255,255,.85); pointer-events: none; }
 input.range { width: 100%; margin-top: 8px; accent-color: #c084fc; }
+
+/* Wild monsters roaming the map */
+.mk-wild { cursor: pointer; }
+.wild-face { font-size: 34px; line-height: 1; text-align: center; filter: drop-shadow(0 3px 3px rgba(0,0,0,.45));
+  animation: prowl 2.4s ease-in-out infinite; }
+@keyframes prowl { 0%,100% { transform: translateY(0) rotate(-4deg) } 50% { transform: translateY(-4px) rotate(4deg) } }
+.mk-wild .mk-label { top: 34px; background: #7f1d1d; }
+.wild-big { font-size: 52px; line-height: 1; width: 72px; text-align: center; }
+.emoji-sprite { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  font-size: 74px; line-height: 1; background: radial-gradient(circle at 50% 42%, #fff, #ffe4e6); }
+.bt-spot .emoji-sprite { font-size: 68px; }
+
+/* ── AR battles: the real world, at video-game resolution ── */
+#ar-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0;
+  image-rendering: pixelated; image-rendering: crisp-edges; filter: saturate(1.35) contrast(1.08); }
+.ar-btn { position: absolute; z-index: 5; top: calc(var(--safe-t) + 10px); right: 12px;
+  background: rgba(17,17,17,.62); color: #fff; font-family: var(--fun); font-size: 13px; font-weight: 700;
+  padding: 8px 13px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.5); backdrop-filter: blur(4px); }
+.ar-btn.on { background: #e11d48; border-color: #fff; }
+.arena.ar { background: #0b0b12; }
+.arena.ar .sun, .arena.ar .cloud, .arena.ar .platform { display: none; }
+.arena.ar .fighters.mine .bt-spot { display: none; }          /* you're the one holding the phone */
+.arena.ar .fighters.foes { top: calc(var(--safe-t) + 16%); bottom: auto; align-items: center; justify-content: center; }
+.arena.ar .fighters.foes .fighter { max-width: 82%; flex-direction: column; gap: 10px; }
+.arena.ar .fighters.foes .bt-spot { width: min(66%, 300px); height: auto; aspect-ratio: 1; }
+.arena.ar .fighters.foes .bt-sprite { background: none; border: none; box-shadow: none; overflow: visible;
+  filter: drop-shadow(0 14px 10px rgba(0,0,0,.55)); animation: loom 2.6s ease-in-out infinite; }
+.arena.ar .emoji-sprite { background: none; font-size: 160px; }
+.arena.ar .bt-sprite svg, .arena.ar .bt-sprite .pic { border-radius: 50%; }
+@keyframes loom { 0%,100% { transform: scale(1) translateY(0) } 50% { transform: scale(1.06) translateY(-6px) } }
+.arena.ar .bt-card { background: rgba(20,10,40,.72); backdrop-filter: blur(3px); }

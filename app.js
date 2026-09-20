@@ -16,7 +16,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 14;   // bump with each upload; shown in your profile
+const BUILD = 17;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -83,6 +83,7 @@ function bearing(a, b) {
 }
 // Face for a player: uploaded photo if they have one, otherwise their character.
 function portrait(p) {
+  if (p && p.emoji) return `<div class="emoji-sprite">${p.emoji}</div>`;
   if (p && p.monster) return monsterSVG(p.monster);
   return p && p.photo ? `<img class="pic" src="${p.photo}" alt="">` : avatarSVG((p && p.look) || {}, (p && p.equipped) || {});
 }
@@ -184,7 +185,7 @@ setInterval(() => ME && renderOthers(), 30000);
 const locStatus = $('#loc-status');
 let watchId = null;
 function setStatus(txt) { locStatus.textContent = txt; locStatus.classList.toggle('hidden', !txt); }
-function startGps(fromTap) {
+function startGps(fromTap, silent) {
   if (!navigator.geolocation || !window.isSecureContext) { setStatus('📍 Location unavailable — drag yourself to move'); return; }
   if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   setStatus('Finding you…');
@@ -193,12 +194,14 @@ function startGps(fromTap) {
     realGps = true; setStatus('');
     setPos({ lat: p.coords.latitude, lng: p.coords.longitude }, first);
     if (first) jumpTo({ lat: p.coords.latitude, lng: p.coords.longitude }, 16);
+    if (sheetKind === 'lochelp') { closeSheet(); toast('📍 Location is on — you\'re on the map for real now.', null, 5000); }
   }, (e) => {
     if (realGps && e.code !== e.PERMISSION_DENIED) return;
     navigator.geolocation.clearWatch(watchId); watchId = null;
     realGps = false; renderMe();
     setStatus('📍 Location off — drag yourself to move');
     if (e.code === e.PERMISSION_DENIED) {
+      if (silent) { if (sheetKind === 'lochelp') toast('Still blocked — check step 2 and 3.', null, 3500); return; }
       if (fromTap) showLocationHelp();
       else toast('📍 Location is blocked, so others can\'t see where you really are.', [['How to fix', 'primary', showLocationHelp], ['Later', '', null]]);
     } else if (fromTap) toast(e.code === e.TIMEOUT ? 'Location timed out. Try again outside.' : "Couldn't find your location.");
@@ -209,18 +212,26 @@ function showLocationHelp() {
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   openSheet(`
     <h2>📍 Location is blocked</h2>
-    <p>Your ${ios ? 'iPhone' : 'browser'} is blocking this site from using your location. To turn it on:</p>
+    <p>Your ${ios ? 'iPhone' : 'browser'} is blocking this site from using your location. Turn it on, then come straight back — it switches on by itself when you return.</p>
     ${ios ? `<ol style="padding-left:20px;line-height:1.6;font-size:14px;margin:0 0 12px">
       <li><b>Settings → Privacy &amp; Security → Location Services</b>: make sure it's <b>On</b>.</li>
       <li>On that same screen, scroll to <b>Safari Websites</b> (or <b>Chrome</b>) → <b>While Using the App</b>, and turn on <b>Precise Location</b>.</li>
       <li>In Safari, tap the <b>page menu</b> icon next to the address bar → <b>Website Settings</b> → <b>Location</b> → <b>Allow</b>.</li>
-      <li>Reload this page.</li></ol>`
-    : `<p>Click the icon next to the address bar, set <b>Location</b> to <b>Allow</b>, then reload.</p>`}
-    <div class="btns"><button class="btn primary" id="reload">Reload page</button><button class="btn" id="stay">Not now</button></div>
+      </ol>
+      <p class="sub">Apple doesn't let a website open Settings for you — you have to tap it yourself. But leave this open: the moment you come back, Anderune checks again.</p>`
+    : `<p>Click the icon next to the address bar, set <b>Location</b> to <b>Allow</b>.</p>`}
+    <div class="btns"><button class="btn primary" id="retry">📍 Try again</button><button class="btn" id="reload">Reload page</button></div>
+    <div class="btns"><button class="btn" id="stay">Keep playing without it</button></div>
   `, 'lochelp');
+  $('#retry').onclick = () => { setStatus('Finding you…'); startGps(true); };
   $('#reload').onclick = () => location.reload();
   $('#stay').onclick = closeSheet;
 }
+// Coming back from the Settings app: check again without making them tap anything.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !ME || realGps) return;
+  if (sheetKind === 'lochelp') setTimeout(() => startGps(false, true), 400);
+});
 
 // ---------- HUD ----------
 function renderHud() {
@@ -376,6 +387,7 @@ function startSession(uid) {
       myTrail = Array.isArray(S.trail) ? S.trail : [];
       renderMe(); jumpTo(myPos, 16);
       pushPos(true);
+      keepWilds();
       startGps(false);
       if (justCreated) { justCreated = false; openProfile(); toast(`👋 Welcome, ${esc(S.name)}! Style your character, then go explore.`, null, 7000); }
     }
@@ -460,6 +472,7 @@ const nudged = new Set();
 function checkProximity() {
   if (!S || sheetKind || inBattle) return;
   checkQuestStep();
+  checkWilds();
   TREASURES.forEach((t) => {
     if (!(S.claimed || []).includes(t.id) && distM(myPos, t) <= CLAIM_RADIUS_M && !nudged.has(t.id)) {
       nudged.add(t.id);
@@ -909,6 +922,7 @@ function openTalk(uid) {
 // ---------- battle (1-on-1, or a party fighting together) ----------
 let inBattle = false, battleId = null, battleUnsub = null, curB = null, shownSeq = 0, animChain = Promise.resolve(), animating = false, waitTimer = null, acting = false;
 const bt = { text: $('#bt-text'), menu: $('#bt-menu') };
+$('#ar-toggle').onclick = () => toggleAR();
 const alive = (b, u) => b.hp[u] > 0;
 const teamOf = (b, u) => b.teams[u];
 const foesOf = (b, u) => b.p.filter((x) => teamOf(b, x) !== teamOf(b, u) && alive(b, x));
@@ -957,6 +971,7 @@ function openBattle(id) {
   battleUnsub = B.watchDoc(COL.battles, id, onBattle);
 }
 function exitBattle() {
+  stopAR();
   battleUnsub && battleUnsub(); battleUnsub = null; clearTimeout(waitTimer); localB = null;
   $('#battle').classList.add('hidden'); document.body.classList.remove('in-battle'); inBattle = false; battleId = null; curB = null;
 }
@@ -1038,8 +1053,10 @@ function showMenu() {
     bt.text.textContent = iWon ? '🏆 You won!' : r.how === 'truce' ? '🤝 Called it a draw.' : r.winners ? 'You lost this one…' : 'The battle is over.';
     if (localB && !localB.handled) {
       localB.handled = true;
-      if (iWon) setTimeout(() => finishQuest(localB.questId), 400);
-      else setTimeout(() => toast('The boss is still standing. Heal up and try again.', null, 6000), 400);
+      const wildId = localB.wildId, questId = localB.questId;
+      if (iWon && wildId) clearWild(wildId);
+      else if (iWon && questId) setTimeout(() => finishQuest(questId), 400);
+      else if (questId) setTimeout(() => toast('The boss is still standing. Heal up and try again.', null, 6000), 400);
     }
     return menu([['Back to map', exitBattle, 'b-blue']], true);
   }
@@ -1147,9 +1164,15 @@ function resolveTurn(b, kind, arg, actor) {
     done = { how: ranAway ? 'fled' : 'ko', winners, losers };
     if (!ranAway) {
       if (b.ai) {
-        const prize = b.prize || 50;
-        if (winners.includes(ME)) { lines.push(`You won ${prize} coins!`); extra[ME].coins = B.inc(prize); extra[ME].xp = B.inc(40); extra[ME]['stats.wins'] = B.inc(1); }
-        else { const lost = Math.floor(S.coins * 0.25); lines.push(lost ? `You dropped ${lost} coins getting away.` : 'You limped away.'); extra[ME].coins = B.inc(-lost); extra[ME].hp = Math.ceil(st[ME].max / 2); }
+        const prize = b.prize || 50, xp = b.xp || 40;
+        if (winners.includes(ME)) {
+          lines.push(`You won ${prize} coins and ${xp} XP!`);
+          extra[ME].coins = B.inc(prize); extra[ME].xp = B.inc(xp); extra[ME]['stats.wins'] = B.inc(1);
+        } else {
+          const lost = Math.floor(S.coins * (b.lossPct != null ? b.lossPct : 0.25));
+          lines.push(lost ? `You dropped ${lost} coins getting away.` : 'You limped away.');
+          extra[ME].coins = B.inc(-lost); extra[ME].hp = Math.ceil(st[ME].max / 2);
+        }
       } else {
         // Each loser forfeits 25% of their coins; the winning side splits the pot.
         const coinsOf = (u) => (u === ME ? S.coins : (others[u] || {}).coins || 0);
@@ -1482,7 +1505,7 @@ function startBossBattle(q, step) {
   const boss = step.boss, sm = statsFor(S);
   closeSheet();
   localB = {
-    p: [AI, ME], teams: { [AI]: 1, [ME]: 2 }, ai: true, status: 'active', questId: q.id, prize: Math.round(((q.reward || {}).coins || 60) * 0.3), // the rest comes from finishing the quest
+    p: [AI, ME], teams: { [AI]: 1, [ME]: 2 }, ai: true, status: 'active', questId: q.id, prize: Math.round(((q.reward || {}).coins || 60) * 0.3), xp: 40, // the rest comes from finishing the quest
     names: { [AI]: boss.name, [ME]: S.name },
     looks: { [AI]: { monster: boss.name }, [ME]: { look: S.look, equipped: S.equipped, photo: S.photo || null } },
     st: { [AI]: { atk: boss.atk, def: boss.def, max: boss.hp, lvl: boss.lvl }, [ME]: sm },
@@ -1520,4 +1543,166 @@ function leaveParty() {
   applyPatch(S, { party: null }); onMyChange();
   toast('Party disbanded.', null, 2500);
   if (sheetKind === 'profile') openProfile(); else closeSheet();
+}
+
+// ---------- wild monsters ----------
+// They roam near you so there's always something to fight, even with nobody else online.
+let wilds = [], wildCooldown = 0;
+function spawnWild(near) {
+  const t = WILD_TYPES[randi(0, WILD_TYPES.length - 1)];
+  const lvl = Math.max(2, S.lvl + randi(-2, 1));
+  const ang = rand(0, Math.PI * 2), dist = rand(70, 320);
+  const pos = { lat: near.lat + (Math.sin(ang) * dist) / 111320,
+                lng: near.lng + (Math.cos(ang) * dist) / (111320 * Math.cos(near.lat * Math.PI / 180)) };
+  return {
+    id: 'w' + Math.random().toString(36).slice(2, 8), ...t, lvl,
+    hp: Math.round(10 + lvl * t.hpMul), atk: Math.round(2 + lvl * t.atkMul), def: Math.round(1 + lvl * t.defMul),
+    coins: 6 + lvl * 3, xp: 10 + lvl * 2, pos, marker: null,
+  };
+}
+function renderWilds() {
+  wilds.forEach((w) => {
+    const html = `<div class="mk mk-wild"><div class="wild-face">${w.emoji}</div>
+      <div class="mk-label">${esc(w.name)} Lv${w.lvl}</div></div>`;
+    if (!w.marker) w.marker = marker(html, w.pos, { onClick: () => openWild(w) });
+    else w.marker.setLngLat(LL(w.pos));
+  });
+}
+function keepWilds() {
+  if (!S || !myPos) return;
+  wilds = wilds.filter((w) => { if (distM(w.pos, myPos) < 900) return true; w.marker && w.marker.remove(); return false; });
+  if (Date.now() >= wildCooldown) while (wilds.length < WILD_COUNT) wilds.push(spawnWild(myPos));
+  renderWilds();
+}
+function wanderWilds() {
+  if (!S || !myPos || inBattle) return;
+  wilds.forEach((w) => {
+    const step = rand(8, 22), ang = rand(0, Math.PI * 2);
+    w.pos = { lat: w.pos.lat + (Math.sin(ang) * step) / 111320,
+              lng: w.pos.lng + (Math.cos(ang) * step) / (111320 * Math.cos(w.pos.lat * Math.PI / 180)) };
+  });
+  keepWilds();
+}
+setInterval(wanderWilds, 4000);
+
+const wildNudged = new Set();
+function checkWilds() {
+  const near = wilds.find((w) => distM(w.pos, myPos) <= WILD_RADIUS_M && !wildNudged.has(w.id));
+  if (!near) return;
+  wildNudged.add(near.id);
+  toast(`${near.emoji} A <b>${esc(near.name)}</b> (Lv${near.lvl}) is right here!`,
+    [['Fight it', 'primary', () => openWild(near)], ['Leave it', '', null]], 0);
+}
+function openWild(w) {
+  const d = distM(myPos, w.pos), close = d <= WILD_RADIUS_M;
+  openSheet(`
+    <div class="row"><div class="wild-big">${w.emoji}</div>
+      <div><h2>${esc(w.name)}</h2><span class="lvl">Lv ${w.lvl}</span>
+      <span class="pill ${close ? 'ok' : 'far'}">${close ? 'Right here' : fmtDist(d) + ' away'}</span></div></div>
+    <p>${esc(w.flavor)}</p>
+    <p class="sub">HP ${w.hp} · ATK ${w.atk} · DEF ${w.def} · beats you for ${w.coins} coins and ${w.xp} XP.</p>
+    <div class="btns"><button class="btn primary" id="fight" ${close ? '' : 'disabled'}>⚔️ Fight it</button>
+      <button class="btn" id="later">Leave it alone</button></div>
+    ${close ? '' : '<p class="sub">Walk closer to start the fight.</p>'}
+  `, 'wild', () => openWild(w));
+  $('#fight').onclick = () => startWildBattle(w);
+  $('#later').onclick = closeSheet;
+}
+function startWildBattle(w) {
+  if (S.hp < 5) return toast('You are too hurt to fight. Heal up first.');
+  closeSheet();
+  const sm = statsFor(S);
+  localB = {
+    p: [AI, ME], teams: { [AI]: 1, [ME]: 2 }, ai: true, status: 'active', wildId: w.id,
+    prize: w.coins, xp: w.xp, lossPct: 0.1,
+    names: { [AI]: w.name, [ME]: S.name },
+    looks: { [AI]: { emoji: w.emoji }, [ME]: { look: S.look, equipped: S.equipped, photo: S.photo || null } },
+    st: { [AI]: { atk: w.atk, def: w.def, max: w.hp, lvl: w.lvl }, [ME]: sm },
+    hp: { [AI]: w.hp, [ME]: S.hp }, def: { [AI]: false, [ME]: false },
+    turn: ME, truce: null, seq: 1, fx: null, result: null,
+    lines: [`A wild ${w.name} blocks your path!`],
+  };
+  battleId = 'local'; inBattle = true; curB = null; shownSeq = 0; animChain = Promise.resolve();
+  $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
+  $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
+  onBattle(localB);
+}
+// A beaten monster wanders off and a new one shows up somewhere else.
+function clearWild(id) {
+  const i = wilds.findIndex((w) => w.id === id);
+  if (i < 0) return;
+  wilds[i].marker && wilds[i].marker.remove();
+  wilds.splice(i, 1);
+  wildCooldown = Date.now() + rand(25000, 70000); // the area stays quiet for a bit
+}
+
+// ---------- AR mode ----------
+// Rear camera behind the fight, crunched down to chunky pixels so the real world
+// looks like it belongs in the game.
+const AR = { on: false, stream: null, video: null, raf: null, last: 0 };
+const AR_W = 104;          // the feed is drawn this small, then stretched — that's the pixelation
+const AR_FPS = 20;
+const AR_LEVELS = 6;       // colour steps per channel
+
+async function toggleAR() {
+  if (AR.on) return stopAR();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast('This browser has no camera access.');
+  if (!window.isSecureContext) return toast('The camera needs an https:// page.');
+  const btn = $('#ar-toggle');
+  btn.textContent = '📷 …';
+  try {
+    AR.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 960 } }, audio: false,
+    });
+  } catch (e) {
+    btn.textContent = '📷 AR';
+    return toast(e && e.name === 'NotAllowedError'
+      ? 'Camera is blocked. Safari → page menu → Website Settings → Camera → Allow.'
+      : "Couldn't open the camera.", null, 7000);
+  }
+  AR.video = document.createElement('video');
+  AR.video.playsInline = true; AR.video.muted = true; AR.video.srcObject = AR.stream;
+  await AR.video.play().catch(() => {});
+  AR.on = true;
+  btn.textContent = '📷 AR on'; btn.classList.add('on');
+  $('#arena').classList.add('ar');
+  $('#ar-canvas').classList.remove('hidden');
+  drawAR();
+  toast('Point your phone at the street — they\'re standing right there.', null, 4000);
+}
+function stopAR() {
+  AR.on = false;
+  cancelAnimationFrame(AR.raf);
+  if (AR.stream) AR.stream.getTracks().forEach((t) => t.stop());
+  AR.stream = null; AR.video = null;
+  const btn = $('#ar-toggle');
+  if (btn) { btn.textContent = '📷 AR'; btn.classList.remove('on'); }
+  const arena = $('#arena'); if (arena) arena.classList.remove('ar');
+  const c = $('#ar-canvas'); if (c) c.classList.add('hidden');
+}
+function drawAR() {
+  AR.raf = requestAnimationFrame(drawAR);
+  if (!AR.on || !AR.video || AR.video.readyState < 2) return;
+  const now = performance.now();
+  if (now - AR.last < 1000 / AR_FPS) return;
+  AR.last = now;
+  const c = $('#ar-canvas'), arena = $('#arena');
+  const ratio = arena.clientHeight / Math.max(1, arena.clientWidth);
+  const w = AR_W, h = Math.round(AR_W * ratio);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  // cover-crop the camera frame into our tiny canvas
+  const vw = AR.video.videoWidth, vh = AR.video.videoHeight;
+  if (!vw || !vh) return;
+  const scale = Math.max(w / vw, h / vh), dw = vw * scale, dh = vh * scale;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(AR.video, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  // posterise the colours so it reads as a game, not a photo
+  const img = ctx.getImageData(0, 0, w, h), d = img.data, step = 255 / (AR_LEVELS - 1);
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = Math.round(d[i] / step) * step;
+    d[i + 1] = Math.round(d[i + 1] / step) * step;
+    d[i + 2] = Math.round(d[i + 2] / step) * step;
+  }
+  ctx.putImageData(img, 0, 0);
 }
