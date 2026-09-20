@@ -75,6 +75,14 @@ const WILD_TYPES = [
   { kind: 'coyote',emoji: '🐺', name: 'Alley Coyote', hpMul: 1.9, atkMul: 0.95, defMul: 0.2,
     flavor: 'Trots down the middle of the street like it pays rent.' },
 ];
+// Weapons you can swing, and emoji for custom special attacks.
+const WEAPONS = {
+  fist:    { label: 'Punch',  emoji: '👊', dmg: 0.85, crit: 0.18 },
+  dagger:  { label: 'Dagger', emoji: '🗡️', dmg: 0.95, crit: 0.26 },
+  sword:   { label: 'Sword',  emoji: '⚔️', dmg: 1.15, crit: 0.10 },
+};
+const SPECIAL_EMOJI = ['✨', '🔥', '⚡', '💥', '🌪️', '🌊', '❄️', '☄️', '🪄', '💫', '🩸', '🦴', '🎸', '🛹', '🌮', '☕', '🧃', '📸', '💀', '🌵'];
+
 const WILD_RADIUS_M = 80;   // how close you must be to start a wild fight
 const WILD_COUNT = 3;       // how many roam near you at once
 

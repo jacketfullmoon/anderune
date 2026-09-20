@@ -16,7 +16,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 18;   // bump with each upload; shown in your profile
+const BUILD = 19;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -31,7 +31,8 @@ const newPlayer = (name) => ({
   equipped: { hat: null, face: null, neck: null }, bag: { potion: 2 },
   coins: 120, hp: 34, lvl: 5, xp: 0, claimed: [], friends: [],
   stats: { battles: 0, wins: 0, treasures: 0, quests: 0 }, medals: [], quest: null,
-  photo: null, lat: null, lng: null, seen: Date.now(), created: Date.now(),
+  photo: null, special: { name: '', emoji: '✨' },
+  lat: null, lng: null, seen: Date.now(), created: Date.now(),
 });
 function gear(p, k) { return Object.values(p.equipped || {}).reduce((t, id) => t + ((id && ITEMS[id] && ITEMS[id][k]) || 0), 0); }
 const statsFor = (p) => ({ atk: 5 + Math.floor(p.lvl / 2) + gear(p, 'atk'), def: 1 + Math.floor(p.lvl / 3) + gear(p, 'def'), max: 24 + p.lvl * 2, lvl: p.lvl });
@@ -636,6 +637,11 @@ function openProfile() {
     <label class="field">Top color</label><div class="opts">${opt('shirt', AVATAR_OPTIONS.shirt, true)}</div>
     <label class="field">Icon background</label><div class="opts">${opt('bg', AVATAR_OPTIONS.bg, true)}</div>
     <label class="field">Gear (from treasures &amp; shops)</label><div class="opts">${gearOpts}</div>
+    <h3>✨ Your special attack</h3>
+    <p class="sub">Once per battle you can unleash this. Give it a name and a symbol.</p>
+    <input class="text" id="sp-name" maxlength="24" placeholder="e.g. Zack Attack" value="${esc((S.special || {}).name || '')}">
+    <div class="opts" style="margin-top:10px">${SPECIAL_EMOJI.map((e) => `
+      <button class="opt sp-emoji ${(S.special || {}).emoji === e ? 'sel' : ''}" data-sp="${e}" style="font-size:20px;padding:6px 10px">${e}</button>`).join('')}</div>
     ${myParty().length ? `<p class="sub" style="margin-top:12px">🧑‍🤝‍🧑 In a party with <b>${myParty().map((u) => esc(others[u].name)).join(', ')}</b> until midnight — you fight together.
       <button class="sub" id="leave-party" style="text-decoration:underline">Leave party</button></p>` : ''}
     <div class="btns"><button class="btn primary" id="done">Done</button></div>
@@ -653,6 +659,12 @@ function openProfile() {
     if (head && k !== 'hair' && k !== 'hairColor') head.innerHTML = avatarSVG(nextLook, S.equipped, { hair: 'none' });
   }));
   sheetBody.querySelectorAll('[data-slot]').forEach((b) => (b.onclick = () => { upd({ ['equipped.' + b.dataset.slot]: b.dataset.item || null }); openProfile(); }));
+  const spName = $('#sp-name');
+  if (spName) spName.oninput = (e) => upd({ 'special.name': e.target.value.trim().slice(0, 24) });
+  sheetBody.querySelectorAll('[data-sp]').forEach((b) => (b.onclick = () => {
+    upd({ 'special.emoji': b.dataset.sp });
+    sheetBody.querySelectorAll('[data-sp]').forEach((o) => o.classList.toggle('sel', o === b));
+  }));
   const lp2 = $('#leave-party'); if (lp2) lp2.onclick = () => leaveParty();
   $('#photo-btn').onclick = pickPhoto;
   const pc = $('#photo-clear'); if (pc) pc.onclick = () => { upd({ photo: null }); openProfile(); };
@@ -948,7 +960,7 @@ async function createBattle(oppId, opp) {
   order.forEach((u) => {
     const d = dataOf(u), st = statsFor(d);
     b.teams[u] = side1.includes(u) ? 1 : 2;
-    b.names[u] = d.name; b.st[u] = st;
+    b.names[u] = d.name; b.st[u] = st; b.special = b.special || {}; b.special[u] = d.special || null;
     b.looks[u] = { look: d.look, equipped: d.equipped, photo: d.photo || null };
     b.hp[u] = Math.max(1, Math.min(d.hp, st.max)); b.def[u] = false;
   });
@@ -971,7 +983,7 @@ function openBattle(id) {
   battleUnsub = B.watchDoc(COL.battles, id, onBattle);
 }
 function exitBattle() {
-  stopAR();
+  stopAR(); closeBattleChatQuiet();
   battleUnsub && battleUnsub(); battleUnsub = null; clearTimeout(waitTimer); localB = null;
   $('#battle').classList.add('hidden'); document.body.classList.remove('in-battle'); inBattle = false; battleId = null; curB = null;
 }
@@ -1006,13 +1018,53 @@ function renderBars(b) {
     if (b.hp[u] <= 0) el.querySelector('.bt-sprite').classList.add('faint');
   });
 }
+// Hit animations: the weapon flies in, the target flashes red, shields bloom, specials orbit.
 function applyFx(fx) {
   if (!fx) return;
-  const el = document.querySelector(`.fighter[data-uid="${fx.t}"] .bt-sprite`);
-  if (!el) return;
-  const cls = fx.k === 'hit' ? (fx.t === ME ? 'shake' : 'flash') : 'heal';
-  el.classList.remove('shake', 'flash', 'heal'); void el.offsetWidth; el.classList.add(cls);
+  const layer = $('#fx-layer'), arena = $('#arena');
+  const target = document.querySelector(`.fighter[data-uid="${fx.t}"] .bt-sprite`);
+  if (!layer || !arena) return;
+  const box = arena.getBoundingClientRect();
+  const at = target ? target.getBoundingClientRect() : box;
+  const tx = at.left + at.width / 2 - box.left, ty = at.top + at.height / 2 - box.top;
+  const mine = fx.t !== ME;                       // a hit I landed comes from my side of the screen
+  const spawn = (cls, text, style) => {
+    const el = document.createElement('div');
+    el.className = cls; el.textContent = text;
+    Object.assign(el.style, style);
+    layer.appendChild(el);
+    setTimeout(() => el.remove(), 1600);
+    return el;
+  };
+  const hurt = () => {
+    if (!target) return;
+    target.classList.remove('hurt'); void target.offsetWidth; target.classList.add('hurt');
+    setTimeout(() => target.classList.remove('hurt'), 700);
+  };
+  if (fx.k === 'hit') {
+    spawn('fx-strike', fx.emoji || '⚔️', {
+      left: tx + 'px', top: ty + 'px',
+      '--from-x': (mine ? -box.width * 0.45 : box.width * 0.45) + 'px',
+      '--from-y': (mine ? box.height * 0.35 : -box.height * 0.3) + 'px',
+      '--spin': (fx.w === 'fist' ? '0deg' : '-140deg'),
+    });
+    setTimeout(() => { hurt(); spawn('fx-pow', '💢', { left: tx + 'px', top: ty + 'px' }); }, 330);
+  } else if (fx.k === 'special') {
+    spawn('fx-orbit', fx.emoji || '✨', { left: tx + 'px', top: ty + 'px' });
+    for (let i = 0; i < 8; i++) {
+      spawn('fx-spark', '✨', { left: tx + 'px', top: ty + 'px',
+        '--dx': Math.cos((i / 8) * 6.28) * 90 + 'px', '--dy': Math.sin((i / 8) * 6.28) * 90 + 'px',
+        animationDelay: 420 + i * 25 + 'ms' });
+    }
+    setTimeout(() => { hurt(); spawn('fx-burst', fx.emoji || '💥', { left: tx + 'px', top: ty + 'px' }); }, 700);
+  } else if (fx.k === 'shield') {
+    spawn('fx-shield', '🛡️', { left: box.width / 2 + 'px', top: box.height * 0.45 + 'px' });
+  } else if (fx.k === 'heal') {
+    if (target) { target.classList.remove('heal'); void target.offsetWidth; target.classList.add('heal'); }
+    spawn('fx-spark', '💚', { left: tx + 'px', top: ty + 'px', '--dx': '0px', '--dy': '-70px' });
+  }
 }
+
 function onBattle(b) {
   if (!b) return;
   const first = !curB; curB = b;
@@ -1071,21 +1123,33 @@ function showMenu() {
     return menu([['🤝 Accept', () => act('truce-yes'), 'b-green'], ['✊ Refuse', () => act('truce-no'), 'b-red']]);
   }
   bt.text.textContent = `What will ${b.names[ME]} do?`;
-  menu([['⚔️ Attack', () => pickTarget('attack'), 'b-red'], ['🛡️ Defend', () => act('defend'), 'b-blue'],
+  menu([['⚔️ Attack', weaponMenu, 'b-red'], ['🛡️ Defend', () => act('defend'), 'b-blue'],
         ['✨ Act', actMenu, 'b-gold'], ['🏃 Run', () => act('run'), 'b-gray']]);
 }
 // With two enemies you choose who to hit.
-function pickTarget(kind) {
+function pickTarget(kind, extra = {}) {
   const b = curB, foes = foesOf(b, ME);
-  if (foes.length < 2) return act(kind, { target: foes[0] });
+  if (foes.length < 2) return act(kind, { target: foes[0], ...extra });
   bt.text.textContent = 'Who do you go for?';
-  menu([...foes.map((u) => [`${b.names[u]} (${b.hp[u]} HP)`, () => act(kind, { target: u }), 'b-red']), ['↩ Back', showMenu, 'b-gray']], true);
+  menu([...foes.map((u) => [`${b.names[u]} (${b.hp[u]} HP)`, () => act(kind, { target: u, ...extra }), 'b-red']), ['↩ Back', showMenu, 'b-gray']], true);
+}
+// Swing with what you like — or spend your one special.
+function weaponMenu() {
+  const b = curB, sp = S.special || {}, used = (b.specUsed || {})[ME];
+  bt.text.textContent = 'How do you hit them?';
+  const items = Object.entries(WEAPONS).map(([id, w]) => [`${w.emoji} ${w.label}`, () => pickTarget('attack', { weapon: id }), 'b-red']);
+  items.push([used ? '✨ Special (spent)' : `${sp.emoji || '✨'} ${sp.name || 'Special attack'}`,
+    () => pickTarget('attack', { weapon: 'special' }), 'b-purple', !!used]);
+  items.push(['↩ Back', showMenu, 'b-gray']);
+  menu(items);
 }
 function actMenu() {
   const heal = ['bigpotion', 'potion', 'sunscreen'].find((id) => count(id) > 0);
+  const human = curB && !curB.ai;
   bt.text.textContent = 'Act how?';
   menu([
     ['🤝 Truce', () => act('truce'), 'b-green'],
+    [human ? '💬 Chat' : '💬 Taunt', human ? openBattleChat : () => act('praise'), 'b-blue'],
     ['💖 Praise', () => pickTarget('praise'), 'b-purple'],
     ['🪙 Pay 30', () => act('pay'), 'b-gold', S.coins < 30],
     [heal ? `${ITEMS[heal].ico} Use item` : '🎒 No items', () => act('item', { item: heal }), 'b-blue', !heal],
@@ -1115,20 +1179,35 @@ function resolveTurn(b, kind, arg, actor) {
   let done = null, fx = null, keepTurn = false;
   switch (kind) {
     case 'attack': {
-      let dmg = Math.max(1, st[X].atk + randi(-2, 3) - st[Y].def);
-      const crit = Math.random() < 0.12; if (crit) dmg = Math.round(dmg * 1.6);
+      const beast = X === AI;                                    // monsters claw, they don't carry swords
+      const wid = beast ? 'claw' : ((arg && arg.weapon) || 'sword');
+      const special = wid === 'special';
+      if (special && (b.specUsed || {})[X]) return null;          // one per battle
+      const wpn = beast ? { label: 'lunge', emoji: '🐾', dmg: 1, crit: 0.1 } : (WEAPONS[wid] || WEAPONS.sword);
+      const spec = (b.special || {})[X] || {};
+      const mult = special ? 1.6 : wpn.dmg;
+      let dmg = Math.max(1, Math.round((st[X].atk + randi(-2, 3) - st[Y].def) * mult));
+      const crit = Math.random() < (special ? 0.2 : wpn.crit); if (crit) dmg = Math.round(dmg * 1.6);
       const blocked = def[Y]; if (blocked) dmg = Math.max(1, Math.floor(dmg / 2));
       hp[Y] = Math.max(0, hp[Y] - dmg); def[Y] = false;
-      lines.push(`${n[X]} attacked ${n[Y]}! (−${dmg} HP)`);
+      if (special) {
+        patch[`specUsed.${X}`] = true;
+        lines.push(`${n[X]} used ${spec.name || 'their special attack'}! (−${dmg} HP)`);
+      } else if (beast) {
+        lines.push(`${n[X]} lunged at ${n[Y]}! (−${dmg} HP)`);
+      } else {
+        lines.push(`${n[X]} hit ${n[Y]} with a ${wpn.label.toLowerCase()}! (−${dmg} HP)`);
+      }
       if (crit) lines.push('A critical hit!');
       if (blocked) lines.push(`${n[Y]}'s guard softened the blow.`);
-      fx = { t: Y, k: 'hit' };
+      fx = { t: Y, k: special ? 'special' : 'hit', w: wid,
+        emoji: special ? (spec.emoji || '✨') : wpn.emoji, name: special ? (spec.name || 'Special') : wpn.label };
       if (hp[Y] <= 0) lines.push(`${n[Y]} fainted!`);
       break;
     }
     case 'defend':
       def[X] = true; hp[X] = Math.min(st[X].max, hp[X] + 2);
-      lines.push(`${n[X]} raised their guard! (+2 HP)`); fx = { t: X, k: 'heal' }; break;
+      lines.push(`${n[X]} raised their guard! (+2 HP)`); fx = { t: X, k: 'shield' }; break;
     case 'praise': {
       const line = ['Nice outfit!', 'Your gear is sick.', 'You hike fast!', 'Cool hat!'][randi(0, 3)];
       patch[`st.${Y}.atk`] = Math.max(2, st[Y].atk - 1);
@@ -1797,4 +1876,49 @@ function drawAR() {
     else { gd[i + 3] = Math.min(255, (lum - 186) * 3.4); }
   }
   gx.putImageData(gi, 0, 0);
+}
+
+// ---------- talking mid-battle ----------
+let bchatUnsub = null;
+function openBattleChat() {
+  const b = curB; if (!b || b.ai) return showMenu();
+  const foe = b.p.find((u) => u !== ME && b.teams[u] !== b.teams[ME]);
+  if (!foe) return showMenu();
+  const box = document.createElement('div');
+  box.id = 'bchat'; box.className = 'sheet-surface';
+  box.innerHTML = `
+    <div class="row" style="justify-content:space-between">
+      <b>💬 ${esc(b.names[foe])}</b><button class="btn" id="bc-close" style="flex:none;min-width:0;padding:6px 12px">Done</button>
+    </div>
+    <div class="chat" id="bc-log"></div>
+    <div class="chips">
+      <button class="chip" data-say="Good fight!">Good fight!</button>
+      <button class="chip" data-say="Truce?">Truce?</button>
+      <button class="chip" data-say="You're good — can I add you?">Can I add you?</button>
+    </div>
+    <div class="row" style="margin-top:8px"><input class="text" id="bc-in" placeholder="Say something…" maxlength="200" style="margin:0">
+      <button class="btn blue" id="bc-send" style="flex:none;min-width:0">Send</button></div>`;
+  $('#arena').appendChild(box);
+  const log = box.querySelector('#bc-log');
+  bchatUnsub = B.watchDoc(COL.chats, pairId(ME, foe), (d) => {
+    const msgs = ((d && d.msgs) || []).slice().sort((a, c) => a.t - c.t).slice(-40);
+    log.innerHTML = msgs.map((m) => `<div class="msg ${m.from === 'sys' ? 'sys' : m.from === ME ? 'me' : 'them'}">${esc(m.text)}</div>`).join('')
+      || '<div class="msg sys">No messages yet</div>';
+    log.scrollTop = log.scrollHeight;
+  });
+  const send = (txt) => { const v = (txt || box.querySelector('#bc-in').value).trim(); if (!v) return; box.querySelector('#bc-in').value = ''; chatSay(foe, v); };
+  box.querySelector('#bc-send').onclick = () => send();
+  box.querySelector('#bc-in').onkeydown = (e) => { if (e.key === 'Enter') send(); };
+  box.querySelectorAll('[data-say]').forEach((c) => (c.onclick = () => send(c.dataset.say)));
+  box.querySelector('#bc-close').onclick = closeBattleChat;
+}
+function closeBattleChat() {
+  if (bchatUnsub) { bchatUnsub(); bchatUnsub = null; }
+  const el = $('#bchat'); if (el) el.remove();
+  showMenu();
+}
+
+function closeBattleChatQuiet() {
+  if (bchatUnsub) { bchatUnsub(); bchatUnsub = null; }
+  const el = $('#bchat'); if (el) el.remove();
 }
