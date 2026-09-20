@@ -487,3 +487,11 @@ body.night #sky-body { filter: drop-shadow(0 0 7px rgba(170,200,255,.9)); }
 .mk-wild.sea::after { content: '☠️'; position: absolute; top: -8px; right: -12px; font-size: 15px; }
 .danger { background: rgba(225,29,72,.18); border: 1.5px solid #fb7185; border-radius: 12px; padding: 10px 12px;
   font-size: 14px; color: #ffd9e0; margin: 10px 0; }
+
+/* mining puzzle */
+.mine { display: grid; gap: 4px; margin: 12px 0; }
+.mine-cell { aspect-ratio: 1; border-radius: 8px; font-size: 22px; line-height: 1; color: #2b1b4a;
+  border: 2px solid rgba(0,0,0,.18); box-shadow: inset 0 -2px 0 rgba(0,0,0,.12); display: flex; align-items: center; justify-content: center; }
+.mine-cell:active { transform: scale(.95); }
+.mine-cell.bad { border-color: #e11d48; box-shadow: 0 0 0 2px rgba(225,29,72,.5); }
+.mine-win { color: #86efac; font-weight: 700; font-size: 15px; }

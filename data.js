@@ -98,6 +98,13 @@ const SEA_TYPES = [
 ];
 const SEA_LEVEL_GAP = 20;   // how far above you an ocean monster always is
 
+// Mining minigame: a Queens-style logic puzzle cut into the rock face.
+const MINE_SIZE = 6;                    // board is 6x6, so six crowns
+const MINE_COOLDOWN = 15 * 60 * 1000;   // a fresh seam every 15 minutes
+const MINE_COINS = [14, 30];            // coins per solve
+const MINE_SP = 0.25;                   // quarter of a stat point per solve
+const MINE_COLORS = ['#ff9f9f', '#ffd28a', '#fff2a1', '#a8e6a3', '#a3d8f5', '#c9b3f7', '#f7b3e0', '#b9d3c2'];
+
 const WILD_RADIUS_M = 80;   // how close you must be to start a wild fight
 const WILD_COUNT = 3;       // how many roam near you at once
 

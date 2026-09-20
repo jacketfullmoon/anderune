@@ -32,7 +32,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 25;   // bump with each upload; shown in your profile
+const BUILD = 26;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -47,7 +47,7 @@ const newPlayer = (name) => ({
   equipped: { hat: null, face: null, neck: null }, bag: { potion: 2 },
   coins: 120, hp: 34, lvl: 5, xp: 0, claimed: [], friends: [],
   stats: { battles: 0, wins: 0, treasures: 0, quests: 0 }, medals: [], quest: null,
-  sp: 0, base: { atk: 0, def: 0, spec: 0, talk: 0 },
+  sp: 0, spFrac: 0, mineAt: 0, base: { atk: 0, def: 0, spec: 0, talk: 0 },
   photo: null, special: { name: '', emoji: '✨' },
   lat: null, lng: null, seen: Date.now(), created: Date.now(),
 });
@@ -1670,8 +1670,12 @@ function openQuests() {
     <h3>Quest lines</h3>
     <div class="list">${others_.map(card).join('') || '<div class="empty">None yet.</div>'}</div>
     ${mine.length ? `<h3>Written by you</h3><div class="list">${mine.map(card).join('')}</div>` : ''}
+    <h3>⛏️ Mining</h3>
+    <p class="sub">A logic puzzle cut into the rock. Crack a seam for coins and a fraction of a stat point — no walking required.</p>
+    <div class="btns"><button class="btn gold" id="mine-go">⛏️ Mine a seam</button></div>
     <div class="btns"><button class="btn blue" id="make">✍️ Write a quest</button></div>
   `, 'quests', openQuests);
+  $('#mine-go').onclick = () => openMine(true);
   sheetBody.querySelectorAll('[data-quest]').forEach((b) => (b.onclick = () => openQuest(questById(b.dataset.quest))));
   $('#make').onclick = openQuestBuilder;
   const sh = $('#show'); if (sh) sh.onclick = () => { closeSheet(); flyTo(questStep(q), 16); };
@@ -2480,4 +2484,116 @@ function checkRest() {
   if (!s) return;
   restNudged.add(s.id);
   toast(`🚏 A rest stop — patch yourself up here?`, [['✚ Rest', 'primary', () => openRest(s)], ['Later', '', null]], 8000);
+}
+
+// ---------- mining minigame ----------
+// A Queens-style puzzle: one crown per row, column and colour, none touching.
+// Generated from a known solution, so every seam can actually be cracked.
+function makeMine(n) {
+  const cols = [...Array(n).keys()];
+  let sol = null;
+  for (let tries = 0; tries < 800 && !sol; tries++) {
+    const p = cols.slice();
+    for (let i = p.length - 1; i > 0; i--) { const j = randi(0, i); [p[i], p[j]] = [p[j], p[i]]; }
+    if (p.every((c, r) => r === 0 || Math.abs(c - p[r - 1]) > 1)) sol = p;
+  }
+  if (!sol) sol = cols.slice();                        // vanishingly rare; still solvable-ish
+  // grow a colour region out from each crown until the board is covered
+  const region = Array.from({ length: n }, () => Array(n).fill(-1));
+  const frontier = sol.map((c, r) => { region[r][c] = r; return [[r, c]]; });
+  let left = n * n - n;
+  while (left > 0) {
+    let moved = false;
+    for (let g = 0; g < n && left > 0; g++) {
+      const f = frontier[g];
+      for (let attempt = 0; attempt < 6 && f.length; attempt++) {
+        const [r, c] = f[randi(0, f.length - 1)];
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]].sort(() => Math.random() - 0.5);
+        const step = dirs.find(([dr, dc]) => {
+          const nr = r + dr, nc = c + dc;
+          return nr >= 0 && nc >= 0 && nr < n && nc < n && region[nr][nc] === -1;
+        });
+        if (step) { const nr = r + step[0], nc = c + step[1]; region[nr][nc] = g; f.push([nr, nc]); left--; moved = true; break; }
+      }
+    }
+    if (!moved) {   // stranded cell — hand it to any neighbour that has a colour
+      outer: for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+        if (region[r][c] !== -1) continue;
+        for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nc >= 0 && nr < n && nc < n && region[nr][nc] !== -1) { region[r][c] = region[nr][nc]; left--; break outer; }
+        }
+      }
+    }
+  }
+  return { n, region, sol };
+}
+let mine = null;
+const mineReady = () => Date.now() >= ((S && S.mineAt) || 0) + MINE_COOLDOWN;
+function openMine(fresh) {
+  if (fresh || !mine) mine = { ...makeMine(MINE_SIZE), cells: Array(MINE_SIZE * MINE_SIZE).fill(0), done: false, paid: !mineReady() };
+  drawMine();
+}
+function mineProblems() {
+  const { n, region, cells } = mine, crowns = [];
+  cells.forEach((v, i) => { if (v === 2) crowns.push([Math.floor(i / n), i % n]); });
+  const bad = new Set();
+  crowns.forEach(([r, c], i) => crowns.forEach(([r2, c2], j) => {
+    if (i === j) return;
+    if (r === r2 || c === c2 || region[r][c] === region[r2][c2] || (Math.abs(r - r2) <= 1 && Math.abs(c - c2) <= 1)) {
+      bad.add(r * n + c); bad.add(r2 * n + c2);
+    }
+  }));
+  return { crowns, bad, solved: crowns.length === n && bad.size === 0 };
+}
+function drawMine() {
+  const { n, region, cells } = mine;
+  const { crowns, bad, solved } = mineProblems();
+  const ready = mineReady();
+  const wait = Math.ceil((((S && S.mineAt) || 0) + MINE_COOLDOWN - Date.now()) / 60000);
+  openSheet(`
+    <h2>⛏️ Mine a seam</h2>
+    <p class="sub">One crown in every row, column and colour — and no two crowns touching, even corner to corner. Tap once to mark a dead cell, twice for a crown.</p>
+    <div class="mine" style="grid-template-columns:repeat(${n},1fr)">
+      ${cells.map((v, i) => {
+        const r = Math.floor(i / n), c = i % n;
+        return `<button class="mine-cell ${bad.has(i) ? 'bad' : ''}" data-cell="${i}"
+          style="background:${MINE_COLORS[region[r][c] % MINE_COLORS.length]}">${v === 2 ? '👑' : v === 1 ? '·' : ''}</button>`;
+      }).join('')}
+    </div>
+    <p class="${solved ? 'mine-win' : 'sub'}">${solved ? '💎 Seam cracked!' : `${crowns.length}/${n} crowns placed${bad.size ? ' — some are fighting' : ''}`}</p>
+    ${mine.done ? `<p class="sub">Paid out. Next seam ${ready ? 'ready now' : `in ${wait} min`}.</p>` : ''}
+    <div class="btns">
+      <button class="btn" id="mine-clear">Clear</button>
+      <button class="btn primary" id="mine-new">${mine.done ? 'Dig another' : 'New seam'}</button>
+    </div>
+    <p class="sub">Each cracked seam pays ${MINE_COINS[0]}–${MINE_COINS[1]} coins and ${MINE_SP} of a stat point${ready ? '' : ` — the next paying seam is in ${wait} min, but you can keep practising`}.</p>
+  `, 'mine');
+  sheetBody.querySelectorAll('[data-cell]').forEach((b) => (b.onclick = () => {
+    if (mine.done) return;
+    const i = +b.dataset.cell;
+    mine.cells[i] = (mine.cells[i] + 1) % 3;
+    SFX.play('tap');
+    const after = mineProblems();
+    if (after.solved) finishMine();
+    else drawMine();
+  }));
+  $('#mine-clear').onclick = () => { mine.cells = Array(n * n).fill(0); mine.done = false; drawMine(); };
+  $('#mine-new').onclick = () => openMine(true);
+}
+function finishMine() {
+  mine.done = true;
+  const paying = mineReady() && !mine.paid;
+  if (paying) {
+    const coins = randi(MINE_COINS[0], MINE_COINS[1]);
+    const frac = ((S.spFrac || 0) + MINE_SP);
+    const whole = Math.floor(frac);
+    upd({ coins: B.inc(coins), spFrac: +(frac - whole).toFixed(2), mineAt: Date.now(), ...(whole ? { sp: (S.sp || 0) + whole } : {}) });
+    SFX.play('coin'); setTimeout(() => SFX.play('win'), 220);
+    toast(`💎 Seam cracked! +${coins} coins and +${MINE_SP} SP${whole ? ` — that's a whole stat point!` : ` (${Math.round(((S.spFrac || 0)) * 100)}% toward the next point)`}`, null, 6000);
+  } else {
+    SFX.play('win');
+    toast('💎 Solved! No payout on a practice seam.', null, 4000);
+  }
+  drawMine();
 }
