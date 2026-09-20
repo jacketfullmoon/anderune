@@ -16,7 +16,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 17;   // bump with each upload; shown in your profile
+const BUILD = 18;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -1637,12 +1637,78 @@ function clearWild(id) {
 }
 
 // ---------- AR mode ----------
-// Rear camera behind the fight, crunched down to chunky pixels so the real world
-// looks like it belongs in the game.
-const AR = { on: false, stream: null, video: null, raf: null, last: 0 };
-const AR_W = 104;          // the feed is drawn this small, then stretched — that's the pixelation
-const AR_FPS = 20;
-const AR_LEVELS = 6;       // colour steps per channel
+// The camera goes behind the fight, and the enemy is pinned to its real spot in the
+// world using the compass, so you can look away from it and find it again.
+const AR = { on: false, stream: null, video: null, raf: null, last: 0, heading: null, pitch: 0, tracking: false };
+const AR_W = 190;          // camera is drawn this wide, then stretched — chunky but readable
+const AR_FPS = 24;
+const AR_LEVELS = 10;      // colour steps per channel
+const AR_HFOV = 58;        // rough horizontal field of view of a phone camera, in degrees
+const AR_VFOV = 74;
+
+function compassBearing(from, to) {
+  const toR = Math.PI / 180, dLng = (to.lng - from.lng) * toR;
+  const y = Math.sin(dLng) * Math.cos(to.lat * toR);
+  const x = Math.cos(from.lat * toR) * Math.sin(to.lat * toR) - Math.sin(from.lat * toR) * Math.cos(to.lat * toR) * Math.cos(dLng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+// Where is the thing we're fighting, in the real world?
+function foeSpot() {
+  if (localB && localB.wildId) { const w = wilds.find((x) => x.id === localB.wildId); if (w) return w.pos; }
+  if (localB && localB.questId) { const q = questById(localB.questId); if (q && S.quest) return q.steps[S.quest.step]; }
+  if (curB) { const o = curB.p.find((u) => u !== ME && curB.teams[u] !== curB.teams[ME]); const p = others[o]; if (p && p.lat != null) return p; }
+  return null;
+}
+function onOrient(e) {
+  const h = e.webkitCompassHeading != null ? e.webkitCompassHeading
+    : (e.alpha != null ? (e.absolute ? 360 - e.alpha : 360 - e.alpha) : null);
+  if (h != null && !Number.isNaN(h)) AR.heading = h;
+  if (e.beta != null) AR.pitch = e.beta;
+  placeFoe();
+}
+// Put the enemy (and its buttons) where they belong on screen for the way you're facing.
+function placeFoe() {
+  const anchor = $('#ar-anchor'), hint = $('#ar-hint'), arena = $('#arena');
+  if (!AR.on || !anchor || !arena) return;
+  const spot = foeSpot();
+  if (AR.heading == null || !spot || !myPos) {           // no compass: just sit centred
+    anchor.style.setProperty('--ar-x', '0px');
+    anchor.style.setProperty('--ar-y', '0px');
+    anchor.classList.remove('gone'); hint.classList.add('hidden');
+    return;
+  }
+  const w = arena.clientWidth, h = arena.clientHeight;
+  let delta = compassBearing(myPos, spot) - AR.heading;
+  while (delta > 180) delta -= 360;
+  while (delta < -180) delta += 360;
+  const x = (delta / (AR_HFOV / 2)) * (w / 2);
+  const tilt = Math.max(-40, Math.min(40, AR.pitch - 75));  // upright-ish phone = eye level
+  const y = (tilt / (AR_VFOV / 2)) * (h / 2);
+  const dist = distM(myPos, spot);
+  const scale = Math.max(0.65, Math.min(1.35, 22 / Math.max(6, dist) + 0.7));
+  anchor.style.setProperty('--ar-x', x.toFixed(1) + 'px');
+  anchor.style.setProperty('--ar-y', Math.max(-h * 0.2, Math.min(h * 0.22, y)).toFixed(1) + 'px');
+  anchor.style.setProperty('--ar-s', scale.toFixed(2));
+  const offScreen = Math.abs(delta) > AR_HFOV / 2 + 6;
+  anchor.classList.toggle('gone', offScreen);
+  if (offScreen) {
+    const name = (curB && curB.names[curB.p.find((u) => u !== ME)]) || 'them';
+    hint.textContent = delta < 0 ? `◀ ${name} is this way` : `${name} is this way ▶`;
+    hint.className = delta < 0 ? 'left' : 'right';
+  } else hint.classList.add('hidden');
+}
+async function askOrientation() {
+  try {
+    const D = window.DeviceOrientationEvent;
+    if (D && typeof D.requestPermission === 'function') {
+      const res = await D.requestPermission();
+      if (res !== 'granted') return false;
+    }
+    window.addEventListener('deviceorientation', onOrient, true);
+    AR.tracking = true;
+    return true;
+  } catch { return false; }
+}
 
 async function toggleAR() {
   if (AR.on) return stopAR();
@@ -1650,9 +1716,10 @@ async function toggleAR() {
   if (!window.isSecureContext) return toast('The camera needs an https:// page.');
   const btn = $('#ar-toggle');
   btn.textContent = '📷 …';
+  const tracked = await askOrientation();   // must be asked from the tap, before the camera
   try {
     AR.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 960 } }, audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
     });
   } catch (e) {
     btn.textContent = '📷 AR';
@@ -1665,20 +1732,32 @@ async function toggleAR() {
   await AR.video.play().catch(() => {});
   AR.on = true;
   btn.textContent = '📷 AR on'; btn.classList.add('on');
-  $('#arena').classList.add('ar');
-  $('#ar-canvas').classList.remove('hidden');
+  $('#arena').classList.add('ar'); document.body.classList.add('ar');
+  ['#ar-canvas', '#ar-glow', '#ar-anchor'].forEach((id) => $(id).classList.remove('hidden'));
+  // the enemy and its buttons now live at the monster's spot in the world
+  $('#ar-anchor').appendChild($('#foes'));
+  $('#ar-anchor').appendChild(bt.menu);
+  placeFoe();
   drawAR();
-  toast('Point your phone at the street — they\'re standing right there.', null, 4000);
+  toast(tracked ? 'Point your phone around — they stay where they are.'
+                : 'Point your phone at the street. (Motion access off, so they stay centred.)', null, 5000);
 }
 function stopAR() {
   AR.on = false;
   cancelAnimationFrame(AR.raf);
   if (AR.stream) AR.stream.getTracks().forEach((t) => t.stop());
   AR.stream = null; AR.video = null;
+  if (AR.tracking) { window.removeEventListener('deviceorientation', onOrient, true); AR.tracking = false; }
   const btn = $('#ar-toggle');
   if (btn) { btn.textContent = '📷 AR'; btn.classList.remove('on'); }
-  const arena = $('#arena'); if (arena) arena.classList.remove('ar');
-  const c = $('#ar-canvas'); if (c) c.classList.add('hidden');
+  const arena = $('#arena');
+  if (arena) {                                   // put the fight back on the drawn field
+    arena.classList.remove('ar');
+    const foes = $('#foes'); if (foes) arena.appendChild(foes);
+    const panel = document.querySelector('.bt-panel'); if (panel && bt.menu) panel.appendChild(bt.menu);
+  }
+  document.body.classList.remove('ar');
+  ['#ar-canvas', '#ar-glow', '#ar-anchor', '#ar-hint'].forEach((id) => { const el = $(id); if (el) el.classList.add('hidden'); });
 }
 function drawAR() {
   AR.raf = requestAnimationFrame(drawAR);
@@ -1686,18 +1765,20 @@ function drawAR() {
   const now = performance.now();
   if (now - AR.last < 1000 / AR_FPS) return;
   AR.last = now;
-  const c = $('#ar-canvas'), arena = $('#arena');
+  const c = $('#ar-canvas'), glow = $('#ar-glow'), arena = $('#arena');
   const ratio = arena.clientHeight / Math.max(1, arena.clientWidth);
   const w = AR_W, h = Math.round(AR_W * ratio);
-  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  if (c.width !== w || c.height !== h) { c.width = glow.width = w; c.height = glow.height = h; }
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  // cover-crop the camera frame into our tiny canvas
   const vw = AR.video.videoWidth, vh = AR.video.videoHeight;
   if (!vw || !vh) return;
+  // fill the screen from the camera's native wide frame: full height, sides cropped.
+  // (Asking for a portrait-shaped frame is what made it look zoomed in before — iOS
+  // delivers that by cropping into the sensor.)
   const scale = Math.max(w / vw, h / vh), dw = vw * scale, dh = vh * scale;
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(AR.video, (w - dw) / 2, (h - dh) / 2, dw, dh);
-  // posterise the colours so it reads as a game, not a photo
+  // posterise a little, so it reads as game art without turning to mush
   const img = ctx.getImageData(0, 0, w, h), d = img.data, step = 255 / (AR_LEVELS - 1);
   for (let i = 0; i < d.length; i += 4) {
     d[i] = Math.round(d[i] / step) * step;
@@ -1705,4 +1786,15 @@ function drawAR() {
     d[i + 2] = Math.round(d[i + 2] / step) * step;
   }
   ctx.putImageData(img, 0, 0);
+  // Bloom: keep only the bright parts, the CSS blur turns them into glow.
+  const gx = glow.getContext('2d', { willReadFrequently: true });
+  gx.clearRect(0, 0, w, h);
+  gx.drawImage(c, 0, 0);
+  const gi = gx.getImageData(0, 0, w, h), gd = gi.data;
+  for (let i = 0; i < gd.length; i += 4) {
+    const lum = gd[i] * 0.299 + gd[i + 1] * 0.587 + gd[i + 2] * 0.114;
+    if (lum < 186) { gd[i + 3] = 0; }
+    else { gd[i + 3] = Math.min(255, (lum - 186) * 3.4); }
+  }
+  gx.putImageData(gi, 0, 0);
 }

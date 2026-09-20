@@ -329,21 +329,43 @@ input.range { width: 100%; margin-top: 8px; accent-color: #c084fc; }
 .bt-spot .emoji-sprite { font-size: 68px; }
 
 /* ── AR battles: the real world, at video-game resolution ── */
-#ar-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0;
-  image-rendering: pixelated; image-rendering: crisp-edges; filter: saturate(1.35) contrast(1.08); }
-.ar-btn { position: absolute; z-index: 5; top: calc(var(--safe-t) + 10px); right: 12px;
+#ar-canvas, #ar-glow { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0;
+  image-rendering: pixelated; image-rendering: crisp-edges; }
+#ar-canvas { filter: saturate(1.3) contrast(1.06); }
+#ar-glow { filter: blur(13px) saturate(1.5); mix-blend-mode: screen; opacity: .85; z-index: 1; }
+.arena.ar::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 45%, rgba(8,4,20,.55) 100%); }
+.ar-btn { position: absolute; z-index: 6; top: calc(var(--safe-t) + 10px); right: 12px;
   background: rgba(17,17,17,.62); color: #fff; font-family: var(--fun); font-size: 13px; font-weight: 700;
   padding: 8px 13px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.5); backdrop-filter: blur(4px); }
 .ar-btn.on { background: #e11d48; border-color: #fff; }
 .arena.ar { background: #0b0b12; }
 .arena.ar .sun, .arena.ar .cloud, .arena.ar .platform { display: none; }
 .arena.ar .fighters.mine .bt-spot { display: none; }          /* you're the one holding the phone */
-.arena.ar .fighters.foes { top: calc(var(--safe-t) + 16%); bottom: auto; align-items: center; justify-content: center; }
-.arena.ar .fighters.foes .fighter { max-width: 82%; flex-direction: column; gap: 10px; }
-.arena.ar .fighters.foes .bt-spot { width: min(66%, 300px); height: auto; aspect-ratio: 1; }
-.arena.ar .fighters.foes .bt-sprite { background: none; border: none; box-shadow: none; overflow: visible;
-  filter: drop-shadow(0 14px 10px rgba(0,0,0,.55)); animation: loom 2.6s ease-in-out infinite; }
-.arena.ar .emoji-sprite { background: none; font-size: 160px; }
-.arena.ar .bt-sprite svg, .arena.ar .bt-sprite .pic { border-radius: 50%; }
-@keyframes loom { 0%,100% { transform: scale(1) translateY(0) } 50% { transform: scale(1.06) translateY(-6px) } }
-.arena.ar .bt-card { background: rgba(20,10,40,.72); backdrop-filter: blur(3px); }
+.arena.ar .fighters.mine { z-index: 4; }
+
+/* Everything pinned to the monster's real-world spot lives in here */
+#ar-anchor { position: absolute; left: 50%; top: 42%; z-index: 3; width: min(88%, 420px);
+  display: flex; flex-direction: column; align-items: center; gap: 26px;
+  transform: translate(-50%, -50%) translate(var(--ar-x, 0px), var(--ar-y, 0px)) scale(var(--ar-s, 1));
+  transition: opacity .18s linear; will-change: transform; }
+#ar-anchor.gone { opacity: 0; pointer-events: none; }
+#ar-anchor .fighters.foes { position: static; width: 100%; justify-content: center; flex-direction: row; }
+#ar-anchor .fighter { max-width: 100%; flex-direction: column; gap: 10px; }
+#ar-anchor .bt-spot { width: min(56%, 230px); height: auto; aspect-ratio: 1; }
+#ar-anchor .bt-sprite { background: none; border: none; box-shadow: none; overflow: visible;
+  filter: drop-shadow(0 0 24px rgba(180,220,255,.55)) drop-shadow(0 14px 12px rgba(0,0,0,.5));
+  animation: loom 2.6s ease-in-out infinite; }
+#ar-anchor .emoji-sprite { background: none; font-size: 118px; }
+#ar-anchor .bt-sprite svg, #ar-anchor .bt-sprite .pic { border-radius: 50%; }
+@keyframes loom { 0%,100% { transform: scale(1) translateY(0) } 50% { transform: scale(1.05) translateY(-5px) } }
+#ar-anchor .bt-card { background: rgba(20,10,40,.68); backdrop-filter: blur(4px); }
+#ar-anchor .bt-menu { width: 100%; }
+#ar-anchor .bt-menu button { backdrop-filter: blur(3px); border: 1.5px solid rgba(255,255,255,.45);
+  box-shadow: 0 0 18px rgba(120,180,255,.35), inset 0 -4px 0 rgba(0,0,0,.25); }
+#ar-hint { position: absolute; z-index: 5; top: 50%; transform: translateY(-50%);
+  background: rgba(10,6,24,.75); color: #fff; font-family: var(--fun); font-weight: 700; font-size: 15px;
+  padding: 10px 14px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.4); white-space: nowrap; }
+#ar-hint.left { left: 10px; } #ar-hint.right { right: 10px; }
+body.ar .bt-panel { background: linear-gradient(rgba(12,6,28,.05), rgba(12,6,28,.92)); border-top: 0; }
+body.ar .bt-text { text-shadow: 0 2px 6px rgba(0,0,0,.9); }
