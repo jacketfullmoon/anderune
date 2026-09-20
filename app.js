@@ -32,7 +32,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 24;   // bump with each upload; shown in your profile
+const BUILD = 25;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -81,7 +81,10 @@ const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const map = new maplibregl.Map({
   container: 'map', style: MAP_STYLE,
   center: [START.lng, START.lat], zoom: 14.5, attributionControl: { compact: true },
+  maxBounds: [[REGION.west, REGION.south], [REGION.east, REGION.north]],   // the game world
+  minZoom: 8.5,
 });
+const inRegion = (p) => !!p && p.lng > REGION.west && p.lng < REGION.east && p.lat > REGION.south && p.lat < REGION.north;
 map.dragRotate.disable();
 map.touchZoomRotate.disableRotation();
 // Small helpers so the rest of the code can keep thinking in {lat, lng}.
@@ -326,6 +329,11 @@ function startGps(fromTap, silent) {
   watchId = navigator.geolocation.watchPosition((p) => {
     const first = !realGps;
     realGps = true; setStatus('');
+    if (!inRegion({ lat: p.coords.latitude, lng: p.coords.longitude })) {
+      setStatus('📍 Outside the game area');
+      if (first) toast(`🗺️ You're outside ${REGION.name}, which is all Anderune covers so far. The map will stay in LA.`, null, 9000);
+      return;
+    }
     setPos({ lat: p.coords.latitude, lng: p.coords.longitude }, first);
     if (first) jumpTo({ lat: p.coords.latitude, lng: p.coords.longitude }, 16);
     if (sheetKind === 'lochelp') { closeSheet(); toast('📍 Location is on — you\'re on the map for real now.', null, 5000); }
@@ -563,6 +571,10 @@ function startSession(uid) {
       myTrail = Array.isArray(S.trail) ? S.trail : [];
       renderMe(); jumpTo(myPos, 16);
       pushPos(true);
+      if (!inRegion(myPos)) {
+        toast(`🗺️ Anderune only covers ${REGION.name} right now — there's nothing out here yet.`, null, 9000);
+        myPos = { lat: START.lat, lng: START.lng };      // park the camera back in town
+      }
       keepWilds();
       if (loadStopCache()) renderStops();
       fetchStops(false);
@@ -1861,19 +1873,31 @@ function leaveParty() {
 // ---------- wild monsters ----------
 // They roam near you so there's always something to fight, even with nobody else online.
 let wilds = [], wildCooldown = 0;
-// Is this spot out on the water? Only answerable for places currently drawn on screen.
-function waterLayers() {
-  try { return map.getStyle().layers.filter((l) => l.type === 'fill' && /water|ocean/.test(l.id)).map((l) => l.id); }
-  catch { return []; }
+// Is this spot out on the water? Tested against the map's real water polygons, so it
+// works for places that aren't on screen — most monsters spawn outside the view.
+function pointInRing(pt, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+    if ((yi > pt.lat) !== (yj > pt.lat) && pt.lng < ((xj - xi) * (pt.lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
+const pointInPoly = (pt, rings) => rings.length > 0 && pointInRing(pt, rings[0]) && !rings.slice(1).some((h) => pointInRing(pt, h));
 function isWaterAt(pos) {
-  if (!map.isStyleLoaded()) return null;
-  const layers = waterLayers();
-  if (!layers.length) return null;
-  const p = map.project(LL(pos)), c = map.getCanvas();
-  if (p.x < 4 || p.y < 4 || p.x > c.clientWidth - 4 || p.y > c.clientHeight - 4) return null;  // off screen, can't tell
-  try { return map.queryRenderedFeatures([p.x, p.y], { layers }).length > 0; } catch { return null; }
+  try {
+    const feats = map.querySourceFeatures('openmaptiles', { sourceLayer: 'water' });
+    if (!feats.length) return null;                       // tiles not loaded yet — ask again later
+    for (const f of feats) {
+      const g = f.geometry;
+      if (!g) continue;
+      if (g.type === 'Polygon' && pointInPoly(pos, g.coordinates)) return true;
+      if (g.type === 'MultiPolygon' && g.coordinates.some((c) => pointInPoly(pos, c))) return true;
+    }
+    return false;
+  } catch { return null; }
 }
+
 // Turn a land monster into something that had no business being out there.
 function makeSeaMonster(w) {
   const t = SEA_TYPES[randi(0, SEA_TYPES.length - 1)];
@@ -1884,10 +1908,20 @@ function makeSeaMonster(w) {
     coins: 6 + lvl * 4, xp: xpFor(lvl, S.lvl),
   });
 }
+// Back to something ordinary when it wanders ashore.
+function makeLandMonster(w) {
+  const t = WILD_TYPES[randi(0, WILD_TYPES.length - 1)];
+  const lvl = Math.max(2, S.lvl + randi(-2, 1));
+  return Object.assign(w, t, {
+    lvl, sea: false,
+    hp: Math.round(10 + lvl * t.hpMul), atk: Math.round(2 + lvl * t.atkMul), def: Math.round(1 + lvl * t.defMul),
+    coins: 6 + lvl * 3, xp: xpFor(lvl, S.lvl),
+  });
+}
 function spawnWild(near) {
   const t = WILD_TYPES[randi(0, WILD_TYPES.length - 1)];
   const lvl = Math.max(2, S.lvl + randi(-2, 1));
-  const ang = rand(0, Math.PI * 2), dist = rand(70, 320);
+  const ang = rand(0, Math.PI * 2), dist = rand(70, 260);
   const pos = { lat: near.lat + (Math.sin(ang) * dist) / 111320,
                 lng: near.lng + (Math.cos(ang) * dist) / (111320 * Math.cos(near.lat * Math.PI / 180)) };
   const w = {
@@ -1901,10 +1935,12 @@ function spawnWild(near) {
 }
 function renderWilds() {
   wilds.forEach((w) => {
-    if (!w.checked) {                       // it spawned off screen — settle it once it's visible
-      const water = isWaterAt(w.pos);
-      if (water !== null) { w.checked = true; if (water) { makeSeaMonster(w); if (w.marker) { w.marker.remove(); w.marker = null; } } }
-    }
+    const water = isWaterAt(w.pos);         // they wander, so re-check which side of the shore they're on
+    if (water !== null && water !== w.sea) {
+      if (water) makeSeaMonster(w); else makeLandMonster(w);
+      w.checked = true;
+      if (w.marker) { w.marker.remove(); w.marker = null; }
+    } else if (water !== null) w.checked = true;
     const html = `<div class="mk mk-wild ${w.sea ? 'sea' : ''}"><div class="wild-face">${w.emoji}</div>
       <div class="mk-label">${esc(w.name)} Lv${w.lvl}</div></div>`;
     if (!w.marker) w.marker = marker(html, w.pos, { onClick: () => openWild(w) });
@@ -1913,6 +1949,7 @@ function renderWilds() {
 }
 function keepWilds() {
   if (!S || !myPos) return;
+  if (!inRegion(myPos)) { wilds.forEach((w) => w.marker && w.marker.remove()); wilds = []; return; }
   wilds = wilds.filter((w) => { if (distM(w.pos, myPos) < 900) return true; w.marker && w.marker.remove(); return false; });
   if (Date.now() >= wildCooldown) while (wilds.length < WILD_COUNT) wilds.push(spawnWild(myPos));
   renderWilds();
@@ -2365,7 +2402,7 @@ function loadStopCache() {
   return false;
 }
 async function fetchStops(force) {
-  if (!myPos) return;
+  if (!myPos || !inRegion(myPos)) return;
   if (!force && lastStopFetch.p && distM(lastStopFetch.p, myPos) < 1200 && Date.now() - lastStopFetch.t < 6 * 3600 * 1000) return;
   lastStopFetch = { t: Date.now(), p: { ...myPos } };
   const q = `[out:json][timeout:20];(node["highway"="bus_stop"](around:2000,${myPos.lat},${myPos.lng});` +

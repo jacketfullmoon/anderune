@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anderune map style preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
+<style>
+  html,body { margin:0; height:100%; font-family:'Fredoka',system-ui,sans-serif; background:#1b0b33; }
+  #map { position:absolute; inset:0; }
+  #bar { position:absolute; z-index:5; top:12px; left:50%; transform:translateX(-50%); display:flex; gap:8px;
+    background:rgba(20,10,40,.8); padding:8px; border-radius:999px; border:1.5px solid #cbb8ff; backdrop-filter:blur(6px); }
+  #bar button { font-family:inherit; font-size:14px; font-weight:600; color:#fff; background:rgba(255,255,255,.14);
+    border:1.5px solid rgba(203,184,255,.5); border-radius:999px; padding:8px 16px; cursor:pointer; }
+  #bar button.on { background:#ff5a4e; border-color:#fff; }
+  #note { position:absolute; z-index:5; bottom:14px; left:50%; transform:translateX(-50%); color:#fff; font-size:13px;
+    background:rgba(20,10,40,.8); padding:8px 14px; border-radius:999px; border:1.5px solid rgba(203,184,255,.5); white-space:nowrap; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="bar">
+  <button id="b-tidy" class="on">Tidy (suggested)</button>
+  <button id="b-game">Bold</button>
+  <button id="b-night">Bold night</button>
+  <button id="b-plain">Current map</button>
+</div>
+<div id="note">Pinch and drag — it's the live map, just repainted</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
+<script>
+const map = new maplibregl.Map({ container:'map', style:'https://tiles.openfreemap.org/styles/liberty',
+  center:[-118.4962,34.0163], zoom:15.3, attributionControl:{compact:true} });
+map.dragRotate.disable(); map.touchZoomRotate.disableRotation();
+
+const PAL = {
+  day:  { bg:'#f7e7c0', land:'#f7e7c0', park:'#3fd07a', parkLine:'#1f9e55', water:'#12a7e0', waterLine:'#0b87bd',
+          res:'#f2dcae', hospital:'#ff90a8', school:'#ffd166', sand:'#ffe07a', bldg:'#fffaf0', bldg3d:'#f3e3ff', bldgLine:'#7a4fd6', bldgOp:0.95,
+          motor:'#ff6a1f', trunk:'#ffa813', second:'#ffd23f', minor:'#ffffff', minorCase:'#b9a3ef', path:'#17c4a0',
+          rail:'#7c3aed', text:'#2d1263', halo:'#ffffff', waterText:'#04607f', parkText:'#0f5c31', boundary:'#e11d48' },
+  night:{ bg:'#0f0b26', land:'#141036', park:'#134f35', parkLine:'#34e08c', water:'#07406e', waterLine:'#2aa5e6',
+          res:'#191343', hospital:'#5f1c36', school:'#5c4418', sand:'#3a2f1c', bldg:'#221b55', bldg3d:'#2b2166', bldgLine:'#b98bff', bldgOp:0.95,
+          motor:'#ff7a29', trunk:'#ffab3d', second:'#4a3f96', minor:'#3a3277', minorCase:'#554a9e', path:'#3ad0ab',
+          rail:'#b06bff', text:'#ffffff', halo:'#0a0620', waterText:'#8fe3ff', parkText:'#8ef5b4', boundary:'#ff5c8a' },
+};
+// Quieter version: same map, gently warmed, with the clutter turned off so your
+// character, chests and monsters are the brightest things on screen.
+const TIDY = { bg:'#f8f0df', land:'#f8f0df', res:'#f4ead6', park:'#8fe0ab', parkLine:'#4fb97a', water:'#86d8f2',
+  waterLine:'#4fb8dd', hospital:'#ffc9d4', school:'#ffe4a8', sand:'#ffeec2', bldg:'#ece2d2', bldgLine:'#cdbfa8',
+  motor:'#ffa552', trunk:'#ffc98a', second:'#ffe0b0', minor:'#ffffff', minorCase:'#e3d8c4',
+  rail:'#c9bdd8', text:'#3d3350', halo:'#ffffff', waterText:'#2d7d99', parkText:'#2f7a4d', boundary:'#d98aa8' };
+const HIDE = /path|pedestrian|footway|cycle|sidewalk|steps|crossing|track/;
+function paintTidy() {
+  const set = (id, prop, val) => { try { map.setPaintProperty(id, prop, val); } catch (e) {} };
+  const hide = (id) => { try { map.setLayoutProperty(id, 'visibility', 'none'); } catch (e) {} };
+  const P = TIDY;
+  map.getStyle().layers.forEach((l) => {
+    const id = l.id, t = l.type;
+    if (HIDE.test(id) && t !== 'fill') return hide(id);      // sidewalks and footpaths: gone
+    if (t === 'background') return set(id, 'background-color', P.bg);
+    if (t === 'raster') return set(id, 'raster-opacity', 0);
+    if (t === 'fill-extrusion') { set(id, 'fill-extrusion-color', P.bldg); return set(id, 'fill-extrusion-opacity', .85); }
+    if (t === 'fill') {
+      if (/water|ocean/.test(id)) return set(id, 'fill-color', P.water);
+      if (/building/.test(id)) { set(id, 'fill-color', P.bldg); return set(id, 'fill-outline-color', P.bldgLine); }
+      if (/park|wood|grass|forest|pitch|golf|cemetery/.test(id)) return set(id, 'fill-color', P.park);
+      if (/hospital/.test(id)) return set(id, 'fill-color', P.hospital);
+      if (/school|university|college/.test(id)) return set(id, 'fill-color', P.school);
+      if (/sand|beach/.test(id)) return set(id, 'fill-color', P.sand);
+      if (/residential/.test(id)) return set(id, 'fill-color', P.res);
+      return set(id, 'fill-color', P.land);
+    }
+    if (t === 'line') {
+      if (/boundary|admin/.test(id)) { set(id, 'line-color', P.boundary); return set(id, 'line-opacity', .7); }
+      if (/waterway|river|stream|canal/.test(id)) return set(id, 'line-color', P.waterLine);
+      if (/park_outline/.test(id)) return set(id, 'line-color', P.parkLine);
+      if (/rail/.test(id)) return set(id, 'line-color', P.rail);
+      if (/casing|outline/.test(id)) return set(id, 'line-color', P.minorCase);
+      if (/motorway/.test(id)) return set(id, 'line-color', P.motor);
+      if (/trunk|primary/.test(id)) return set(id, 'line-color', P.trunk);
+      if (/secondary|tertiary/.test(id)) return set(id, 'line-color', P.second);
+      return set(id, 'line-color', P.minor);
+    }
+    if (t === 'symbol') {
+      if (/water|marine|ocean/.test(id)) { set(id, 'text-color', P.waterText); return set(id, 'text-halo-color', P.halo); }
+      if (/park/.test(id)) { set(id, 'text-color', P.parkText); return set(id, 'text-halo-color', P.halo); }
+      set(id, 'text-color', P.text); set(id, 'text-halo-color', P.halo); set(id, 'text-halo-width', 1.8);
+    }
+  });
+}
+let original = null, hidden = [];
+function snapshot() {
+  original = {};
+  map.getStyle().layers.forEach((l) => { original[l.id] = JSON.parse(JSON.stringify(l.paint || {})); });
+}
+function restore() {
+  if (!original) return;
+  map.getStyle().layers.forEach((l) => { try { map.setLayoutProperty(l.id, 'visibility', 'visible'); } catch (e) {} });
+  map.getStyle().layers.forEach((l) => {
+    const p = original[l.id] || {};
+    Object.keys(p).forEach((k) => { try { map.setPaintProperty(l.id, k, p[k]); } catch (e) {} });
+    if (l.type === 'raster') { try { map.setPaintProperty(l.id, 'raster-opacity', 1); } catch (e) {} }
+  });
+}
+function paint(mode) {
+  const P = PAL[mode];
+  const set = (id, prop, val) => { try { map.setPaintProperty(id, prop, val); } catch (e) {} };
+  map.getStyle().layers.forEach((l) => {
+    const id = l.id, t = l.type;
+    if (t === 'background') return set(id, 'background-color', P.bg);
+    if (t === 'raster') return set(id, 'raster-opacity', 0);
+    if (t === 'fill-extrusion') { set(id, 'fill-extrusion-color', P.bldg3d); return set(id, 'fill-extrusion-opacity', .92); }
+    if (t === 'fill') {
+      if (/water|ocean/.test(id)) return set(id, 'fill-color', P.water);
+      if (/building/.test(id)) { set(id, 'fill-color', P.bldg); set(id, 'fill-opacity', P.bldgOp); return set(id, 'fill-outline-color', P.bldgLine); }
+      if (/park|wood|grass|forest|pitch|golf|cemetery|track/.test(id)) return set(id, 'fill-color', P.park);
+      if (/hospital/.test(id)) return set(id, 'fill-color', P.hospital);
+      if (/school|university|college/.test(id)) return set(id, 'fill-color', P.school);
+      if (/sand|beach|desert/.test(id)) return set(id, 'fill-color', P.sand);
+      if (/residential/.test(id)) return set(id, 'fill-color', P.res);
+      return set(id, 'fill-color', P.land);
+    }
+    if (t === 'line') {
+      if (/boundary|admin/.test(id)) { set(id, 'line-color', P.boundary); return set(id, 'line-opacity', .9); }
+      if (/waterway|river|stream|canal/.test(id)) return set(id, 'line-color', P.waterLine);
+      if (/park_outline/.test(id)) return set(id, 'line-color', P.parkLine);
+      if (/rail/.test(id)) return set(id, 'line-color', P.rail);
+      if (/path|pedestrian|footway|cycle/.test(id)) return set(id, 'line-color', P.path);
+      if (/casing|outline/.test(id)) return set(id, 'line-color', P.minorCase);
+      if (/motorway/.test(id)) return set(id, 'line-color', P.motor);
+      if (/trunk|primary/.test(id)) return set(id, 'line-color', P.trunk);
+      if (/secondary|tertiary/.test(id)) return set(id, 'line-color', P.second);
+      if (/building/.test(id)) return set(id, 'line-color', P.bldgLine);
+      return set(id, 'line-color', P.minor);
+    }
+    if (t === 'symbol') {
+      if (/water|marine|ocean/.test(id)) { set(id, 'text-color', P.waterText); return set(id, 'text-halo-color', P.halo); }
+      if (/park/.test(id)) { set(id, 'text-color', P.parkText); return set(id, 'text-halo-color', P.halo); }
+      set(id, 'text-color', P.text); set(id, 'text-halo-color', P.halo); set(id, 'text-halo-width', 2);
+    }
+  });
+}
+const btns = { 'b-tidy': paintTidy, 'b-game': () => paint('day'), 'b-night': () => paint('night'), 'b-plain': restore };
+map.on('load', () => { snapshot(); paintTidy(); });
+Object.entries(btns).forEach(([id, fn]) => {
+  document.getElementById(id).onclick = (e) => {
+    document.querySelectorAll('#bar button').forEach((b) => b.classList.remove('on'));
+    e.target.classList.add('on');
+    if (id !== 'b-plain') restore();
+    fn();
+  };
+});
+</script>
+</body>
+</html>

@@ -3,6 +3,10 @@
 // Accounts that act as "Anderune masters" (case-insensitive character names).
 const ADMIN_NAMES = ['zack'];
 
+// The world, for now: Malibu and the San Fernando Valley down through LA and
+// Orange County to Mission Viejo. The camera can't leave it.
+const REGION = { west: -119.00, south: 33.40, east: -117.45, north: 34.45, name: 'Los Angeles to Mission Viejo' };
+
 const START = { lat: 34.0155, lng: -118.4945, label: 'Santa Monica' }; // near 3rd St Promenade
 const CLAIM_RADIUS_M = 60;   // how close you must be to open a chest
 const NEARBY_RADIUS_M = 500; // how close another player must be to battle (friends can chat from anywhere)
