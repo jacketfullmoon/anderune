@@ -1,5 +1,21 @@
 /* Quest — real-world location LARP. Multiplayer via backend.js (Firebase). */
 
+// ---------- boot screen ----------
+const SPLASH_LINES = ['waking up the wildlife…', 'burying treasure…', 'teaching bears to hold a grudge…',
+  'polishing swords…', 'scattering coins around town…', 'checking who else is out there…', 'unrolling the map…'];
+(function splash() {
+  const line = document.getElementById('splash-line');
+  let i = 0;
+  line.textContent = SPLASH_LINES[Math.floor(Math.random() * SPLASH_LINES.length)];
+  const spin = setInterval(() => { i++; line.textContent = SPLASH_LINES[(i + 3) % SPLASH_LINES.length]; }, 1400);
+  window.hideSplash = () => {
+    clearInterval(spin);
+    const el = document.getElementById('splash');
+    if (el && !el.classList.contains('gone')) { el.classList.add('gone'); setTimeout(() => el.remove(), 600); }
+  };
+  setTimeout(() => window.hideSplash(), 7000);   // never trap anyone behind it
+})();
+
 // ---------- helpers ----------
 const $ = (s) => document.querySelector(s);
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -16,7 +32,7 @@ const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
 
 // ---------- backend + state ----------
-const BUILD = 19;   // bump with each upload; shown in your profile
+const BUILD = 21;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -251,6 +267,7 @@ $('#btn-friends').onclick = safely(openFriends);
 $('#btn-search').onclick = safely(() => openSearch(''));
 $('#btn-stats').onclick = safely(openStats);
 $('#btn-quests').onclick = safely(openQuests);
+$('#btn-settings').onclick = safely(openSettings);
 setInterval(() => { if (S && !inBattle && S.hp < maxHp()) upd({ hp: B.inc(1) }); }, 30000);
 
 // ---------- toasts ----------
@@ -279,6 +296,7 @@ function openSheet(html, kind, refresh) {
   sheetKind = kind; sheetRefresh = refresh || null;
   sheetBody.dataset.kind = kind; sheetBody.innerHTML = html;
   sheet.classList.remove('hidden'); backdrop.classList.remove('hidden');
+  if (!same) SFX.play('sheet');
   sheet.scrollTop = same ? y : 0;
 }
 function closeSheet() {
@@ -287,6 +305,37 @@ function closeSheet() {
   if (sheetCleanup) { sheetCleanup(); sheetCleanup = null; }
 }
 backdrop.onclick = closeSheet;
+
+// Pull the sheet down by its top edge to dismiss it.
+(function dragToClose() {
+  let start = null;
+  const grabbable = (t) => t.closest('.sheet-grip') || t.closest('.sheet-grab') || (t === sheet || t === sheetBody);
+  sheet.addEventListener('pointerdown', (e) => {
+    if (sheet.scrollTop > 2 || !grabbable(e.target)) return;
+    start = { y: e.clientY, t: Date.now() };
+    sheet.classList.add('dragging');
+    sheet.setPointerCapture(e.pointerId);
+  });
+  sheet.addEventListener('pointermove', (e) => {
+    if (!start) return;
+    const dy = Math.max(0, e.clientY - start.y);
+    sheet.style.transform = `translateY(${dy}px)`;
+    sheet.style.opacity = String(Math.max(0.35, 1 - dy / 500));
+  });
+  const end = (e) => {
+    if (!start) return;
+    const dy = Math.max(0, (e.clientY || 0) - start.y), speed = dy / Math.max(1, Date.now() - start.t);
+    start = null;
+    sheet.classList.remove('dragging');
+    sheet.style.transform = ''; sheet.style.opacity = '';
+    if (dy > 110 || speed > 0.6) {
+      sheet.classList.add('closing');
+      setTimeout(() => { sheet.classList.remove('closing'); closeSheet(); }, 200);
+    }
+  };
+  sheet.addEventListener('pointerup', end);
+  sheet.addEventListener('pointercancel', end);
+})();
 
 // ---------- auth (same flow as the gas app) ----------
 function validateUsername(name) {
@@ -365,8 +414,9 @@ let justCreated = false;
   passwordIn.onkeydown = (e) => { if (e.key === 'Enter') { if (mode === 'create') hintIn.focus(); else attemptLogin(); } };
   hintIn.onkeydown = (e) => { if (e.key === 'Enter') attemptCreate(); };
 
-  if (B.mode === 'unconfigured') { modal.classList.add('hidden'); $('#setup-modal').classList.remove('hidden'); return; }
+  if (B.mode === 'unconfigured') { window.hideSplash && window.hideSplash(); modal.classList.add('hidden'); $('#setup-modal').classList.remove('hidden'); return; }
   B.onAuth((uid) => {
+    setTimeout(() => window.hideSplash && window.hideSplash(), 350);
     if (uid) { modal.classList.add('hidden'); startSession(uid); }
     else { endSession(); modal.classList.remove('hidden'); }
   });
@@ -383,7 +433,7 @@ function startSession(uid) {
     S = d;
     if (firstLoad) {
       firstLoad = false;
-      ['#side-btns', '#stat-pill', '#locate-btn'].forEach((s) => $(s).classList.remove('hidden'));
+      ['#side-btns', '#stat-pill', '#locate-btn', '#btn-settings'].forEach((s) => $(s).classList.remove('hidden'));
       myPos = S.lat != null ? { lat: S.lat, lng: S.lng } : { lat: START.lat, lng: START.lng };
       myTrail = Array.isArray(S.trail) ? S.trail : [];
       renderMe(); jumpTo(myPos, 16);
@@ -413,7 +463,7 @@ function endSession() {
   for (const k in playerMarkers) delete playerMarkers[k];
   if (meLayer) { meLayer.remove(); meLayer = null; meKey = ''; }
   myTrail = [];
-  ['#side-btns', '#stat-pill', '#locate-btn'].forEach((s) => $(s).classList.add('hidden'));
+  ['#side-btns', '#stat-pill', '#locate-btn', '#btn-settings'].forEach((s) => $(s).classList.add('hidden'));
   Object.values(reqToasts).forEach((el) => el.remove());
   setStatus(''); closeSheet();
 }
@@ -423,6 +473,7 @@ function onMyChange() {
   // Keep data tidy: level up at 100 XP, unequip items you no longer own.
   if (S.xp >= 100 && !leveling) {
     leveling = true; const lv = S.lvl + Math.floor(S.xp / 100);
+    SFX.play('level');
     toast(`⭐ Level up! You're now Lv${lv}.`);
     upd({ xp: S.xp % 100, lvl: lv, hp: 24 + lv * 2 }); leveling = false;
   }
@@ -452,6 +503,7 @@ function openTreasure(t) {
 function claimTreasure(t) {
   if ((S.claimed || []).includes(t.id) || distM(myPos, t) > CLAIM_RADIUS_M) return;
   const it = ITEMS[t.item];
+  SFX.play('coin');
   closeSheet();
   upd({ claimed: B.union(t.id), ['bag.' + t.item]: B.inc(1), coins: B.inc(t.coins), xp: B.inc(40), 'stats.treasures': B.inc(1) });
   openSheet(`
@@ -642,6 +694,10 @@ function openProfile() {
     <input class="text" id="sp-name" maxlength="24" placeholder="e.g. Zack Attack" value="${esc((S.special || {}).name || '')}">
     <div class="opts" style="margin-top:10px">${SPECIAL_EMOJI.map((e) => `
       <button class="opt sp-emoji ${(S.special || {}).emoji === e ? 'sel' : ''}" data-sp="${e}" style="font-size:20px;padding:6px 10px">${e}</button>`).join('')}</div>
+    ${isAdmin(S) ? `<h3>🧪 Test battles</h3>
+      <p class="sub">Practice runs, master. No coins, no XP, no record — just to see how a fight feels.</p>
+      <div class="btns"><button class="btn blue" id="test-player">🧑 Fight a test player</button>
+        <button class="btn" id="test-monster">🐻 Fight a test monster</button></div>` : ''}
     ${myParty().length ? `<p class="sub" style="margin-top:12px">🧑‍🤝‍🧑 In a party with <b>${myParty().map((u) => esc(others[u].name)).join(', ')}</b> until midnight — you fight together.
       <button class="sub" id="leave-party" style="text-decoration:underline">Leave party</button></p>` : ''}
     <div class="btns"><button class="btn primary" id="done">Done</button></div>
@@ -659,6 +715,8 @@ function openProfile() {
     if (head && k !== 'hair' && k !== 'hairColor') head.innerHTML = avatarSVG(nextLook, S.equipped, { hair: 'none' });
   }));
   sheetBody.querySelectorAll('[data-slot]').forEach((b) => (b.onclick = () => { upd({ ['equipped.' + b.dataset.slot]: b.dataset.item || null }); openProfile(); }));
+  const tp = $('#test-player'); if (tp) tp.onclick = () => startTestBattle('player');
+  const tm = $('#test-monster'); if (tm) tm.onclick = () => startTestBattle('monster');
   const spName = $('#sp-name');
   if (spName) spName.oninput = (e) => upd({ 'special.name': e.target.value.trim().slice(0, 24) });
   sheetBody.querySelectorAll('[data-sp]').forEach((b) => (b.onclick = () => {
@@ -825,6 +883,7 @@ function onIncoming(list) {
       : r.kind === 'quest' ? `📜 <b>${from}</b> invited you to the quest "${esc((questById(r.questId) || {}).title || 'a quest')}"`
       : r.kind === 'party' ? `🧑‍🤝‍🧑 <b>${from}</b> asked if you want to join their party.`
       : `${KIND[r.kind][0]} <b>${from}</b> wants to ${KIND[r.kind][1]}!`;
+    SFX.play('ping');
     const yes = r.kind === 'party' ? 'Yes' : 'Accept', no = r.kind === 'party' ? 'No' : 'Decline';
     reqToasts[r.id] = toast(msg, [[yes, 'primary', () => { delete reqToasts[r.id]; acceptRequest(r); }],
       [no, '', () => { delete reqToasts[r.id]; B.update(COL.req, r.id, { status: 'declined' }); }]], 0);
@@ -1042,14 +1101,16 @@ function applyFx(fx) {
     setTimeout(() => target.classList.remove('hurt'), 700);
   };
   if (fx.k === 'hit') {
-    spawn('fx-strike', fx.emoji || '⚔️', {
+    SFX.play('swing'); setTimeout(() => SFX.play(fx.t === ME ? 'hurt' : 'hit'), 320);
+    spawn('fx-strike ' + (mine ? 'out' : 'in'), fx.emoji || '⚔️', {
       left: tx + 'px', top: ty + 'px',
-      '--from-x': (mine ? -box.width * 0.45 : box.width * 0.45) + 'px',
-      '--from-y': (mine ? box.height * 0.35 : -box.height * 0.3) + 'px',
-      '--spin': (fx.w === 'fist' ? '0deg' : '-140deg'),
+      '--from-x': (mine ? -box.width * 0.22 : box.width * 0.1) + 'px',
+      '--from-y': (mine ? box.height * 0.42 : -box.height * 0.12) + 'px',
+      '--spin': (fx.w === 'fist' ? '-8deg' : '-150deg'),
     });
     setTimeout(() => { hurt(); spawn('fx-pow', '💢', { left: tx + 'px', top: ty + 'px' }); }, 330);
   } else if (fx.k === 'special') {
+    SFX.play('special');
     spawn('fx-orbit', fx.emoji || '✨', { left: tx + 'px', top: ty + 'px' });
     for (let i = 0; i < 8; i++) {
       spawn('fx-spark', '✨', { left: tx + 'px', top: ty + 'px',
@@ -1058,8 +1119,10 @@ function applyFx(fx) {
     }
     setTimeout(() => { hurt(); spawn('fx-burst', fx.emoji || '💥', { left: tx + 'px', top: ty + 'px' }); }, 700);
   } else if (fx.k === 'shield') {
+    SFX.play('shield');
     spawn('fx-shield', '🛡️', { left: box.width / 2 + 'px', top: box.height * 0.45 + 'px' });
   } else if (fx.k === 'heal') {
+    SFX.play('heal');
     if (target) { target.classList.remove('heal'); void target.offsetWidth; target.classList.add('heal'); }
     spawn('fx-spark', '💚', { left: tx + 'px', top: ty + 'px', '--dx': '0px', '--dy': '-70px' });
   }
@@ -1102,6 +1165,7 @@ function showMenu() {
   if (b.status === 'done') {
     const r = b.result || {};
     const iWon = r.winners && r.winners.includes(ME);
+    SFX.play(iWon ? 'win' : r.winners ? 'lose' : 'ping');
     bt.text.textContent = iWon ? '🏆 You won!' : r.how === 'truce' ? '🤝 Called it a draw.' : r.winners ? 'You lost this one…' : 'The battle is over.';
     if (localB && !localB.handled) {
       localB.handled = true;
@@ -1266,6 +1330,7 @@ function resolveTurn(b, kind, arg, actor) {
   }
   if (done) {
     patch.status = 'done'; patch.result = done;
+    if (b.test) return { patch: Object.assign(patch, { hp, def, lines, fx, seq: b.seq + 1, updated: Date.now(), turn: X }), extra: [] };
     b.p.forEach((u) => { if (extra[u].hp === undefined) extra[u].hp = Math.max(1, hp[u]); extra[u]['stats.battles'] = B.inc(1); });
   }
   // Next living fighter in the rotation.
@@ -1921,4 +1986,145 @@ function closeBattleChat() {
 function closeBattleChatQuiet() {
   if (bchatUnsub) { bchatUnsub(); bchatUnsub = null; }
   const el = $('#bchat'); if (el) el.remove();
+}
+
+// ---------- admin practice battles ----------
+function startTestBattle(kind) {
+  closeSheet();
+  const sm = statsFor(S);
+  const foe = kind === 'monster'
+    ? { name: 'Test Grizzly', looks: { emoji: '🐻' }, atk: sm.atk, def: Math.max(1, sm.def - 1), max: sm.max + 6, lvl: S.lvl }
+    : { name: 'Test Rival', lvl: S.lvl, atk: sm.atk, def: sm.def, max: sm.max,
+        looks: { look: { skin: '#c68642', hair: 'bob', hairColor: '#2b1a0e', shirt: '#e11d48', bg: '#2b2450', top: 'hoodie' },
+                 equipped: { hat: 'cap', face: null, neck: null } } };
+  localB = {
+    p: [AI, ME], teams: { [AI]: 1, [ME]: 2 }, ai: true, test: true, status: 'active',
+    prize: 0, xp: 0, lossPct: 0,
+    names: { [AI]: foe.name, [ME]: S.name },
+    looks: { [AI]: foe.looks, [ME]: { look: S.look, equipped: S.equipped, photo: S.photo || null } },
+    special: { [ME]: S.special || null },
+    st: { [AI]: { atk: foe.atk, def: foe.def, max: foe.max, lvl: foe.lvl }, [ME]: sm },
+    hp: { [AI]: foe.max, [ME]: Math.max(S.hp, Math.ceil(sm.max / 2)) },
+    def: { [AI]: false, [ME]: false },
+    turn: ME, truce: null, seq: 1, fx: null, result: null, specUsed: {},
+    lines: [`Test battle: ${S.name} vs ${foe.name}.`, 'Nothing here counts — swing away.'],
+  };
+  battleId = 'local'; inBattle = true; curB = null; shownSeq = 0; animChain = Promise.resolve();
+  $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
+  $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
+  onBattle(localB);
+}
+
+// ---------- sound ----------
+// Everything here is synthesised on the fly — no audio files to download.
+const SFX = {
+  ctx: null, out: null,
+  prefs: (() => {
+    const d = { sfx: true, sfxVol: 0.7, music: false, musicVol: 0.5 };
+    try { return { ...d, ...JSON.parse(localStorage.getItem('qm_sound') || '{}') }; } catch { return d; }
+  })(),
+  save() { try { localStorage.setItem('qm_sound', JSON.stringify(this.prefs)); } catch {} },
+  init() {
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.out = this.ctx.createGain();
+    this.out.gain.value = this.prefs.sfxVol;
+    this.out.connect(this.ctx.destination);
+  },
+  setVol(v) { this.prefs.sfxVol = v; if (this.out) this.out.gain.value = v; this.save(); },
+  // a single swept note
+  tone(type, f0, f1, dur, vol = 0.25, delay = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t);
+    if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + Math.min(0.02, dur / 3));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(this.out); o.start(t); o.stop(t + dur + 0.02);
+  },
+  // a puff of filtered noise — whooshes, impacts, shimmer
+  noise(dur, vol = 0.25, f0 = 1200, f1 = 400, delay = 0, q = 1) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime + delay, n = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(Math.max(60, f1), t + dur);
+    const g = this.ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.out); src.start(t); src.stop(t + dur + 0.02);
+  },
+  play(name) {
+    if (!this.prefs.sfx) return;
+    this.init();
+    if (!this.ctx) return;
+    switch (name) {
+      case 'tap':     this.tone('sine', 620, 880, 0.07, 0.16); break;
+      case 'sheet':   this.tone('sine', 380, 620, 0.12, 0.12); break;
+      case 'swing':   this.noise(0.16, 0.3, 2600, 700, 0, 0.8); break;
+      case 'hit':     this.noise(0.16, 0.34, 2400, 600, 0, 0.8);
+                      this.noise(0.14, 0.38, 320, 90, 0.11, 1.4);
+                      this.tone('square', 200, 60, 0.16, 0.22, 0.11); break;
+      case 'hurt':    this.tone('sawtooth', 240, 70, 0.22, 0.2); this.noise(0.18, 0.2, 700, 180, 0, 1.2); break;
+      case 'shield':  this.tone('triangle', 300, 900, 0.34, 0.2);
+                      this.tone('triangle', 306, 912, 0.34, 0.14, 0.02);
+                      this.noise(0.4, 0.12, 900, 2600, 0.05, 2); break;
+      case 'special': [660, 880, 1100, 1320, 1760].forEach((f, i) => this.tone('square', f, f * 1.02, 0.13, 0.17, i * 0.07));
+                      this.noise(0.5, 0.16, 1200, 4200, 0.1, 2.5); break;
+      case 'heal':    this.tone('sine', 700, 1050, 0.25, 0.18); this.tone('sine', 1050, 1400, 0.2, 0.1, 0.1); break;
+      case 'coin':    this.tone('square', 1180, 1180, 0.07, 0.18); this.tone('square', 1580, 1580, 0.12, 0.16, 0.07); break;
+      case 'win':     [523, 659, 784, 1047].forEach((f, i) => this.tone('triangle', f, f, 0.16, 0.22, i * 0.11)); break;
+      case 'lose':    [440, 370, 294, 220].forEach((f, i) => this.tone('sawtooth', f, f * 0.98, 0.2, 0.16, i * 0.12)); break;
+      case 'ping':    this.tone('sine', 880, 880, 0.09, 0.18); this.tone('sine', 1170, 1170, 0.12, 0.16, 0.1); break;
+      case 'level':   [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone('square', f, f, 0.14, 0.18, i * 0.08)); break;
+    }
+  },
+};
+// Any tap on a control clicks softly; the first tap also unlocks audio on iOS.
+document.addEventListener('pointerdown', (e) => {
+  SFX.init();
+  const t = e.target.closest('button, .chip, .opt, .swatch, .slot, .item[data-see], [data-quest]');
+  if (t && !t.disabled) SFX.play(t.closest('#bt-menu') ? 'tap' : 'tap');
+}, true);
+
+// ---------- settings ----------
+function openSettings() {
+  const p = SFX.prefs;
+  openSheet(`
+    <h2>⚙️ Settings</h2>
+    <div class="set-row">
+      <div><b>🔊 Sound effects</b><div class="sub">Hits, shields, coins, taps.</div></div>
+      <button class="switch ${p.sfx ? 'on' : ''}" id="sfx-toggle" aria-label="Sound effects"><i></i></button>
+    </div>
+    <label class="field">Effects volume</label>
+    <input class="range" id="sfx-vol" type="range" min="0" max="100" value="${Math.round(p.sfxVol * 100)}" ${p.sfx ? '' : 'disabled'}>
+    <div class="set-row" style="margin-top:14px">
+      <div><b>🎵 Music<span class="soon">not yet</span></b><div class="sub">No soundtrack in the game yet — this is here for when there is one.</div></div>
+      <button class="switch ${p.music ? 'on' : ''}" id="mus-toggle" aria-label="Music"><i></i></button>
+    </div>
+    <label class="field">Music volume</label>
+    <input class="range" id="mus-vol" type="range" min="0" max="100" value="${Math.round(p.musicVol * 100)}" ${p.music ? '' : 'disabled'}>
+    <div class="btns"><button class="btn" id="sfx-test">▶️ Test sound</button><button class="btn primary" id="set-done">Done</button></div>
+    <p class="sub" style="margin-top:12px">build ${BUILD}</p>
+  `, 'settings');
+  const sfxT = $('#sfx-toggle'), musT = $('#mus-toggle'), sfxV = $('#sfx-vol'), musV = $('#mus-vol');
+  sfxT.onclick = () => {
+    SFX.prefs.sfx = !SFX.prefs.sfx; SFX.save();
+    sfxT.classList.toggle('on', SFX.prefs.sfx); sfxV.disabled = !SFX.prefs.sfx;
+    if (SFX.prefs.sfx) SFX.play('tap');
+  };
+  sfxV.oninput = () => SFX.setVol(+sfxV.value / 100);
+  sfxV.onchange = () => SFX.play('coin');
+  musT.onclick = () => {
+    SFX.prefs.music = !SFX.prefs.music; SFX.save();
+    musT.classList.toggle('on', SFX.prefs.music); musV.disabled = !SFX.prefs.music;
+    toast('Saved — there\'s no music yet, but it\'ll use this when there is.', null, 3500);
+  };
+  musV.oninput = () => { SFX.prefs.musicVol = +musV.value / 100; SFX.save(); };
+  $('#sfx-test').onclick = () => { SFX.play('special'); setTimeout(() => SFX.play('win'), 500); };
+  $('#set-done').onclick = closeSheet;
 }

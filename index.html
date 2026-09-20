@@ -15,13 +15,21 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=21">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 </head>
 <body>
 <div id="map"></div>
+
+<!-- Boot screen -->
+<div id="splash">
+  <div class="splash-mark">📜<span>🎮</span></div>
+  <h1>Entering Anderune</h1>
+  <p id="splash-line">waking up the wildlife…</p>
+  <div class="splash-dots"><i></i><i></i><i></i></div>
+</div>
 
 <!-- Small status pill (coins + HP) -->
 <div id="stat-pill" class="hidden">
@@ -42,6 +50,7 @@
 <button id="locate-btn" class="side-btn locate hidden" aria-label="Center on me">
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
 </button>
+<button id="btn-settings" class="side-btn gear hidden" aria-label="Settings">⚙️</button>
 <div id="loc-status" class="hidden"></div>
 
 <!-- Auth modal (same flow as the gas app: username + password + optional hint, no email) -->
@@ -101,9 +110,9 @@
 </section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
-<script src="data.js?v=19"></script>
-<script src="avatar.js?v=19"></script>
-<script src="backend.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="data.js?v=21"></script>
+<script src="avatar.js?v=21"></script>
+<script src="backend.js?v=21"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

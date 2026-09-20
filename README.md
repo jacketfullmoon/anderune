@@ -28,6 +28,14 @@ Sign up with a **character name + password + optional password hint**. No email,
 - **Talk** — live chat, item trades (both sides confirm), add friend.
 - **Shops** at real places; you must be there in person to buy.
 
+## Sound
+
+All effects are synthesised with the Web Audio API at runtime — no audio files ship with the app. `SFX.play(name)` covers taps, sheet opens, swings, impacts, shields, heals, specials, coins, level ups, wins and losses. The ⚙️ gear on the map opens settings: sound effects on/off with its own volume, plus a music row that stores its setting for whenever a soundtrack exists. Settings live in `localStorage`, per device. iOS only allows audio after a tap, so the first touch anywhere unlocks it.
+
+## Admin test battles
+
+An account listed in `ADMIN_NAMES` gets "🧪 Test battles" in its profile: practice fights against a test player or a test monster. Nothing counts — no coins, no XP, no record.
+
 ## Home-screen icon
 
 `icons/icon-180.png` is the Apple touch icon (📜 scroll with a 🎮 controller on top, on the app's purple gradient); 192 and 512 versions are listed in `manifest.json` for Android. On iPhone: open the site in Safari → Share → **Add to Home Screen**. It installs as "Anderune" and opens full screen with no browser chrome. To redraw the icons, re-run the Pillow script in the commit history (it renders the real Apple emoji from the system font).
