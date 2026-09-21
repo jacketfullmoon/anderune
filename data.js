@@ -92,6 +92,9 @@ const WEAPONS = {
   sword:   { label: 'Sword',  emoji: '⚔️', dmg: 1.15, crit: 0.10 },
 };
 const SPECIAL_EMOJI = ['✨', '🔥', '⚡', '💥', '🌪️', '🌊', '❄️', '☄️', '🪄', '💫', '🩸', '🦴', '🎸', '🛹', '🌮', '☕', '🧃', '📸', '💀', '🌵'];
+// Ander Points: the special attack's charge meter. Fighting builds it up.
+const AP_COST = 2;    // AP spent per special attack
+const AP_BASE = 2;    // starting AP capacity — train it to bank more charge and fire off specials back to back
 
 // Things that spawn out on the water. You are not supposed to win these.
 const SEA_TYPES = [

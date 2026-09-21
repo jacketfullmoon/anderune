@@ -166,8 +166,8 @@ select.text, input.text { width: 100%; padding: 11px 12px; border: 1.5px solid v
 .c1 { width: 74px; top: 22%; left: 32%; } .c2 { width: 56px; top: 34%; left: 60%; animation-duration: 40s; }
 @keyframes drift { from { transform: translateX(-36px) } to { transform: translateX(36px) } }
 .fighters { position: absolute; display: flex; gap: 8px; z-index: 2; }
-.fighters.foes { top: calc(var(--safe-t) + 16%); left: 10px; right: 10px; justify-content: flex-start; align-items: flex-end; flex-direction: row-reverse; }
-.fighters.mine { bottom: 12px; left: 10px; right: 10px; justify-content: flex-start; align-items: flex-end; }
+.fighters.foes { top: calc(var(--safe-t) + 16%); left: 10px; right: 10px; justify-content: flex-start; align-items: flex-end; }
+.fighters.mine { bottom: 12px; left: 10px; right: 10px; justify-content: flex-start; align-items: flex-end; flex-direction: row-reverse; }
 .fighter { display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 46%; }
 .fighters.foes .fighter { flex-direction: column-reverse; }
 .fighter.turn .bt-card { outline: 3px solid #fbbf24; }
@@ -181,6 +181,12 @@ select.text, input.text { width: 100%; padding: 11px 12px; border: 1.5px solid v
 .bt-bar div.mid { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 .bt-bar div.low { background: linear-gradient(90deg, #ef4444, #f87171); }
 .bt-hpnum { font-size: 11px; text-align: right; margin-top: 3px; font-weight: 600; }
+.bt-apbar { display: flex; align-items: center; gap: 3px; margin-top: 4px; }
+.bt-apbar .ap-label { font-size: 8px; font-weight: 700; letter-spacing: .3px; opacity: .7; margin-right: 1px; }
+.bt-apbar i { width: 11px; height: 8px; border-radius: 3px; background: rgba(0,0,0,.4); box-shadow: inset 0 1px 2px rgba(0,0,0,.3); }
+.bt-apbar i.lit { background: linear-gradient(180deg, #d8b4fe, #9333ea); box-shadow: 0 0 4px rgba(168,85,247,.85), inset 0 1px 1px rgba(255,255,255,.5); }
+.bt-apbar.full i.lit { animation: apPulse 1s ease-in-out infinite; }
+@keyframes apPulse { 50% { box-shadow: 0 0 9px rgba(216,180,254,1), inset 0 1px 1px rgba(255,255,255,.7); } }
 .bt-spot { position: relative; width: 116px; height: 116px; }
 .fighters.mine .fighter:first-child .bt-spot { width: 142px; height: 142px; }
 .platform { position: absolute; left: -10%; right: -10%; bottom: -6%; height: 28%; border-radius: 50%; background: radial-gradient(ellipse at center, #2f8a34 0%, #43a047 50%, rgba(67,160,71,0) 70%); }
@@ -209,6 +215,34 @@ select.text, input.text { width: 100%; padding: 11px 12px; border: 1.5px solid v
 .bt-menu .b-gray { background: linear-gradient(#94a3b8, #64748b); }
 .bt-menu .b-green { background: linear-gradient(#4ade80, #16a34a); }
 .bt-menu .b-purple { background: linear-gradient(#c084fc, #9333ea); }
+
+/* Floating bubble buttons — any battle menu shown this way (the main
+   Attack/Defend/Act/Run choice, the weapon picker, …) fans out as circular
+   buttons around the player's own health card instead of sitting in the
+   bottom panel. Positions come from JS (fanPositions) since the bubble count
+   varies per menu; they idle-bob on the "translate" property (kept separate
+   from the "scale" entrance/press animations so all three compose cleanly). */
+.bt-radial { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.radial-btn {
+  position: absolute; width: 62px; height: 62px; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  pointer-events: auto; font-family: var(--fun); border: 3px solid rgba(255,255,255,.85);
+  box-shadow: 0 6px 14px rgba(0,0,0,.45), inset 0 -4px 0 rgba(0,0,0,.22);
+  animation: radialIn .3s backwards, bubbleFloat 2.6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * .05s), calc(var(--i) * .18s);
+}
+.radial-btn:active { scale: .92; }
+.radial-btn:disabled { opacity: .4; filter: grayscale(.7); animation-play-state: running, paused; }
+.radial-btn .ri-ico { font-size: 22px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+.radial-btn .ri-label { font-size: 9px; font-weight: 700; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.45); letter-spacing: .2px; }
+.radial-btn.b-red { background: radial-gradient(circle at 35% 28%, #fda4af, #e11d48 72%); }
+.radial-btn.b-blue { background: radial-gradient(circle at 35% 28%, #93c5fd, #2563eb 72%); }
+.radial-btn.b-gold { background: radial-gradient(circle at 35% 28%, #fde68a, #f59e0b 72%); color: #3a2a00; }
+.radial-btn.b-gold .ri-label { color: #3a2a00; text-shadow: none; }
+.radial-btn.b-gray { background: radial-gradient(circle at 35% 28%, #cbd5e1, #64748b 72%); }
+.radial-btn.b-purple { background: radial-gradient(circle at 35% 28%, #d8b4fe, #7c3aed 72%); }
+@keyframes radialIn { from { scale: .2; opacity: 0 } to { scale: 1; opacity: 1 } }
+@keyframes bubbleFloat { 0%, 100% { translate: 0 0 } 50% { translate: 0 -7px } }
 
 /* ── FF7-style beveled windows ───────────────── */
 #stat-pill, .auth-card, .sheet, .toast, .bt-panel, .bt-card, .chat {
@@ -341,7 +375,7 @@ input.range { width: 100%; margin-top: 8px; accent-color: #c084fc; }
   padding: 8px 13px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.5); backdrop-filter: blur(4px); }
 .ar-btn.on { background: #e11d48; border-color: #fff; }
 .arena.ar { background: #0b0b12; }
-.arena.ar .sun, .arena.ar .cloud, .arena.ar .platform, .arena.ar .moon, .arena.ar .stars, .arena.ar .biome-art { display: none; }
+.arena.ar .sun, .arena.ar .cloud, .arena.ar .platform, .arena.ar .moon, .arena.ar .stars, .arena.ar .biome-art, .arena.ar .bt-radial { display: none; }
 .arena.ar .fighters.mine .bt-spot { display: none; }          /* you're the one holding the phone */
 .arena.ar .fighters.mine { z-index: 4; }
 
@@ -563,7 +597,7 @@ body.night #sky-body { filter: drop-shadow(0 0 7px rgba(170,200,255,.9)); }
   font-size: 14px; color: #ffd9e0; margin: 10px 0; }
 
 /* mining puzzle */
-.mine { display: grid; gap: 4px; margin: 12px 0; }
+.mine-grid { display: grid; gap: 4px; margin: 12px 0; }
 .mine-cell { aspect-ratio: 1; border-radius: 8px; font-size: 22px; line-height: 1; color: #2b1b4a;
   border: 2px solid rgba(0,0,0,.18); box-shadow: inset 0 -2px 0 rgba(0,0,0,.12); display: flex; align-items: center; justify-content: center; }
 .mine-cell:active { transform: scale(.95); }

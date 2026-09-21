@@ -40,7 +40,7 @@ function offsetLL(pos, meters, bearingDeg) {
 }
 
 // ---------- backend + state ----------
-const BUILD = 31;   // bump with each upload; shown in your profile
+const BUILD = 34;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -55,7 +55,7 @@ const newPlayer = (name) => ({
   equipped: { hat: null, face: null, neck: null }, bag: { potion: 2 },
   coins: 120, hp: 34, lvl: 5, xp: 0, claimed: [], friends: [],
   stats: { battles: 0, wins: 0, treasures: 0, quests: 0 }, medals: [], quest: null,
-  sp: 0, spFrac: 0, mineAt: 0, base: { atk: 0, def: 0, spec: 0, talk: 0 },
+  sp: 0, spFrac: 0, mineAt: 0, base: { atk: 0, def: 0, spec: 0, talk: 0, ap: 0 },
   photo: null, special: { name: '', emoji: '✨' },
   lat: null, lng: null, seen: Date.now(), created: Date.now(),
 });
@@ -67,6 +67,7 @@ const statsFor = (p) => ({
   max: 24 + p.lvl * 2 + trained(p, 'def') * 2,
   spec: 1.6 + trained(p, 'spec') * 0.05,     // special attack multiplier
   talk: trained(p, 'talk') * 0.04,           // better odds of talking your way out
+  apCap: AP_BASE + trained(p, 'ap'),         // how much Ander Points charge you can bank
   lvl: p.lvl,
 });
 // XP for beating someone: bigger when they outrank you, small when you punch down.
@@ -841,12 +842,14 @@ function openProfile() {
         <button class="btn" data-sp-add="def">🛡️ Defense <small>+1</small></button>
         <button class="btn" data-sp-add="spec">✨ Special <small>+1</small></button>
         <button class="btn" data-sp-add="talk">💬 Negotiate <small>+1</small></button>
+        <button class="btn" data-sp-add="ap">🔋 AP capacity <small>+1</small></button>
       </div></div>` : ''}
     <h3>📊 Stats</h3>
     <div class="statline"><span>⚔️ Attack</span><b>${st.atk}</b><span class="sub">${trained(S, 'atk')} trained</span></div>
     <div class="statline"><span>🛡️ Defense</span><b>${st.def}</b><span class="sub">${trained(S, 'def')} trained</span></div>
     <div class="statline"><span>✨ Special power</span><b>×${st.spec.toFixed(2)}</b><span class="sub">${trained(S, 'spec')} trained</span></div>
     <div class="statline"><span>💬 Negotiate</span><b>+${Math.round(st.talk * 100)}%</b><span class="sub">${trained(S, 'talk')} trained</span></div>
+    <div class="statline"><span>🔋 AP capacity</span><b>${st.apCap}</b><span class="sub">${trained(S, 'ap')} trained</span></div>
     <label class="field">Icon</label>
     <div class="photo-row">
       <button class="btn" id="photo-btn">📸 ${S.photo ? 'Change photo' : 'Use a photo'}</button>
@@ -861,7 +864,7 @@ function openProfile() {
     <label class="field">Icon background</label><div class="opts">${opt('bg', AVATAR_OPTIONS.bg, true)}</div>
     <label class="field">Gear (from treasures &amp; shops)</label><div class="opts">${gearOpts}</div>
     <h3>✨ Your special attack</h3>
-    <p class="sub">Once per battle you can unleash this. Give it a name and a symbol.</p>
+    <p class="sub">Costs ${AP_COST} AP to unleash — fighting charges your AP meter, and it's yours again once you've built it back up. Train AP capacity to bank extra charge for back-to-back specials. Give it a name and a symbol.</p>
     <input class="text" id="sp-name" maxlength="24" placeholder="e.g. Zack Attack" value="${esc((S.special || {}).name || '')}">
     <div class="opts" style="margin-top:10px">${SPECIAL_EMOJI.map((e) => `
       <button class="opt sp-emoji ${(S.special || {}).emoji === e ? 'sel' : ''}" data-sp="${e}" style="font-size:20px;padding:6px 10px">${e}</button>`).join('')}</div>
@@ -1177,7 +1180,7 @@ function openTalk(uid) {
 
 // ---------- battle (1-on-1, or a party fighting together) ----------
 let inBattle = false, battleId = null, battleUnsub = null, curB = null, shownSeq = 0, animChain = Promise.resolve(), animating = false, waitTimer = null, acting = false;
-const bt = { text: $('#bt-text'), menu: $('#bt-menu') };
+const bt = { text: $('#bt-text'), menu: $('#bt-menu'), radial: $('#bt-radial') };
 $('#ar-toggle').onclick = () => toggleAR();
 $('#ar-compass').onclick = async () => {
   const ok = await askOrientation();
@@ -1242,7 +1245,7 @@ async function createBattle(oppId, opp) {
 function openBattle(id) {
   closeSheet();
   if (battleId && battleId !== id) exitBattle();
-  bt.text.textContent = 'Loading battle…'; bt.menu.innerHTML = '';
+  bt.text.textContent = 'Loading battle…'; bt.menu.innerHTML = ''; bt.radial.innerHTML = '';
   enterBattleScreen(id);
   battleUnsub = B.watchDoc(COL.battles, id, onBattle);
 }
@@ -1258,6 +1261,7 @@ function fighterHtml(b, u) {
     <div class="bt-card">
       <div class="bt-nameline"><span>${esc(b.names[u])}</span><span class="bt-lv">Lv${b.st[u].lvl}</span></div>
       <div class="bt-bar"><div></div></div>
+      <div class="bt-apbar"><span class="ap-label">AP</span>${Array.from({ length: b.st[u].apCap || AP_BASE }, () => '<i></i>').join('')}</div>
       <div class="bt-hpnum"></div>
     </div>
     <div class="bt-spot"><div class="platform"></div><div class="bt-sprite">${portrait(b.looks[u])}</div></div>
@@ -1277,6 +1281,9 @@ function renderBars(b) {
     const pct = Math.max(0, b.hp[u] / b.st[u].max * 100);
     const bar = el.querySelector('.bt-bar div');
     bar.style.width = pct + '%'; bar.className = pct < 25 ? 'low' : pct < 50 ? 'mid' : '';
+    const apNow = (b.ap || {})[u] || 0;
+    el.querySelectorAll('.bt-apbar i').forEach((pip, i) => pip.classList.toggle('lit', i < apNow));
+    el.querySelector('.bt-apbar').classList.toggle('full', apNow >= AP_COST);
     el.querySelector('.bt-hpnum').textContent = u === ME || matesOf(b, ME).includes(u) ? `${Math.max(0, b.hp[u])}/${b.st[u].max}` : '';
     el.classList.toggle('down', b.hp[u] <= 0);
     el.classList.toggle('turn', b.status === 'active' && b.turn === u);
@@ -1362,7 +1369,7 @@ function onBattle(b) {
     shownSeq = b.seq;
     const snap = JSON.parse(JSON.stringify(b)), lines = snap.lines || [];
     animChain = animChain.then(async () => {
-      animating = true; bt.menu.innerHTML = '';
+      animating = true; bt.menu.innerHTML = ''; bt.radial.innerHTML = '';
       for (let i = 0; i < lines.length; i++) {
         await say(lines[i]);
         if (i === 0) { applyFx(snap.fx); renderBars(snap); }
@@ -1378,11 +1385,42 @@ async function say(msg) {
   await sleep(700);
 }
 function menu(items, wide) {
+  bt.radial.innerHTML = '';
   bt.menu.className = 'bt-menu' + (wide ? ' wide' : '');
   bt.menu.innerHTML = '';
   items.forEach(([label, fn, cls, disabled]) => {
     const b = document.createElement('button'); b.textContent = label; b.className = cls || 'b-blue'; b.disabled = !!disabled;
     b.onclick = () => { if (acting) return; bt.menu.innerHTML = ''; fn(); }; bt.menu.appendChild(b);
+  });
+}
+// Fans n floating bubbles across an arc that hugs the left/top side of the
+// player's own health card (bottom-right corner) without covering it — wider
+// arcs for more items so a 5-bubble weapon choice doesn't crowd a 4-bubble menu.
+function fanPositions(n) {
+  const cx = 96, cy = 150, start = 75, end = 225;      // arc that clears the health card at both ends
+  const r = 118 + Math.max(0, n - 4) * 16;             // more items → push the arc out a bit further
+  return Array.from({ length: n }, (_, i) => {
+    const t = n === 1 ? 0.5 : i / (n - 1);
+    const rad = (start + (end - start) * t) * Math.PI / 180;
+    return { right: Math.round(cx - Math.cos(rad) * r), bottom: Math.round(cy + Math.sin(rad) * r) };
+  });
+}
+// Any menu shown this way fans out as circular floating buttons around the
+// player's own health card instead of the bottom panel grid (AR keeps the
+// grid, since there its buttons are repositioned to float next to the
+// AR-anchored foe). items: [emoji, label, fn, cls, disabled?]
+function radialMenu(items) {
+  bt.menu.innerHTML = '';
+  bt.radial.innerHTML = '';
+  const pos = fanPositions(items.length);
+  items.forEach(([emoji, label, fn, cls, disabled], i) => {
+    const b = document.createElement('button'); b.className = 'radial-btn ' + (cls || 'b-blue');
+    b.style.setProperty('--i', i);
+    b.style.right = pos[i].right + 'px'; b.style.bottom = pos[i].bottom + 'px';
+    b.disabled = !!disabled;
+    b.innerHTML = `<span class="ri-ico">${emoji}</span><span class="ri-label">${label}</span>`;
+    b.onclick = () => { if (acting) return; bt.radial.innerHTML = ''; fn(); };
+    bt.radial.appendChild(b);
   });
 }
 function showMenu() {
@@ -1402,9 +1440,9 @@ function showMenu() {
     }
     return menu([['Back to map', exitBattle, 'b-blue']], true);
   }
-  if (!alive(b, ME)) { bt.text.textContent = 'You are down. Your party fights on…'; bt.menu.innerHTML = ''; return; }
+  if (!alive(b, ME)) { bt.text.textContent = 'You are down. Your party fights on…'; bt.menu.innerHTML = ''; bt.radial.innerHTML = ''; return; }
   if (b.turn !== ME) {
-    bt.text.textContent = `Waiting for ${b.names[b.turn]}…`; bt.menu.innerHTML = '';
+    bt.text.textContent = `Waiting for ${b.names[b.turn]}…`; bt.menu.innerHTML = ''; bt.radial.innerHTML = '';
     waitTimer = setTimeout(() => menu([['🚪 Leave battle', () => act('leave'), 'b-gray']], true), 45000);
     return;
   }
@@ -1413,8 +1451,12 @@ function showMenu() {
     return menu([['🤝 Accept', () => act('truce-yes'), 'b-green'], ['✊ Refuse', () => act('truce-no'), 'b-red']]);
   }
   bt.text.textContent = `What will ${b.names[ME]} do?`;
-  menu([['⚔️ Attack', weaponMenu, 'b-red'], ['🛡️ Defend', () => act('defend'), 'b-blue'],
-        ['✨ Act', actMenu, 'b-gold'], ['🏃 Run', () => act('run'), 'b-gray']]);
+  const actions = [['⚔️', 'Attack', weaponMenu, 'b-red'], ['🛡️', 'Defend', () => act('defend'), 'b-blue'],
+                    ['✨', 'Act', actMenu, 'b-gold'], ['🏃', 'Run', () => act('run'), 'b-gray']];
+  // AR mode already floats the button grid next to the AR-anchored enemy —
+  // keep that behavior there instead of fanning circles around a hidden avatar.
+  if (AR.on) menu(actions.map(([e, l, fn, cls]) => [`${e} ${l}`, fn, cls]));
+  else radialMenu(actions);
 }
 // With two enemies you choose who to hit.
 function pickTarget(kind, extra = {}) {
@@ -1423,15 +1465,15 @@ function pickTarget(kind, extra = {}) {
   bt.text.textContent = 'Who do you go for?';
   menu([...foes.map((u) => [`${b.names[u]} (${b.hp[u]} HP)`, () => act(kind, { target: u, ...extra }), 'b-red']), ['↩ Back', showMenu, 'b-gray']], true);
 }
-// Swing with what you like — or spend your one special.
+// Swing with what you like — or spend a charged Ander Points meter on your special.
 function weaponMenu() {
-  const b = curB, sp = S.special || {}, used = (b.specUsed || {})[ME];
+  const b = curB, sp = S.special || {}, apNow = (b.ap || {})[ME] || 0, ready = apNow >= AP_COST;
   bt.text.textContent = 'How do you hit them?';
-  const items = Object.entries(WEAPONS).map(([id, w]) => [`${w.emoji} ${w.label}`, () => pickTarget('attack', { weapon: id }), 'b-red']);
-  items.push([used ? '✨ Special (spent)' : `${sp.emoji || '✨'} ${sp.name || 'Special attack'}`,
-    () => pickTarget('attack', { weapon: 'special' }), 'b-purple', !!used]);
-  items.push(['↩ Back', showMenu, 'b-gray']);
-  menu(items);
+  const items = Object.entries(WEAPONS).map(([id, w]) => [w.emoji, w.label, () => pickTarget('attack', { weapon: id }), 'b-red']);
+  items.push([sp.emoji || '✨', ready ? (sp.name || 'Special') : `${apNow}/${AP_COST} AP`,
+    () => pickTarget('attack', { weapon: 'special' }), 'b-purple', !ready]);
+  items.push(['↩', 'Back', showMenu, 'b-gray']);
+  radialMenu(items);
 }
 function actMenu() {
   const heal = ['bigpotion', 'potion', 'sunscreen'].find((id) => count(id) > 0);
@@ -1462,6 +1504,7 @@ function resolveTurn(b, kind, arg, actor) {
   if (!b || b.status !== 'active') return null;
   if (kind !== 'leave' && b.turn !== X) return null;
   const n = b.names, st = b.st, hp = { ...b.hp }, def = { ...b.def }, lines = [], patch = {};
+  const ap = { ...(b.ap || {}) }; b.p.forEach((u) => { if (ap[u] == null) ap[u] = 0; });
   const foes = b.p.filter((u) => b.teams[u] !== b.teams[X] && hp[u] > 0);
   const Y = (arg && arg.target && hp[arg.target] > 0) ? arg.target : foes.sort((a, c) => hp[c] - hp[a])[0];
   if (!Y) return null;
@@ -1472,7 +1515,8 @@ function resolveTurn(b, kind, arg, actor) {
       const beast = X === AI;                                    // monsters claw, they don't carry swords
       const wid = beast ? 'claw' : ((arg && arg.weapon) || 'sword');
       const special = wid === 'special';
-      if (special && (b.specUsed || {})[X]) return null;          // one per battle
+      const cap = st[X].apCap || AP_BASE;
+      if (special && ap[X] < AP_COST) return null;                 // needs a charged Ander Points meter
       const wpn = beast ? { label: 'lunge', emoji: '🐾', dmg: 1, crit: 0.1 } : (WEAPONS[wid] || WEAPONS.sword);
       const spec = (b.special || {})[X] || {};
       const mult = special ? (X === ME ? statsFor(S).spec : 1.6) : wpn.dmg;
@@ -1481,11 +1525,13 @@ function resolveTurn(b, kind, arg, actor) {
       const blocked = def[Y]; if (blocked) dmg = Math.max(1, Math.floor(dmg / 2));
       hp[Y] = Math.max(0, hp[Y] - dmg); def[Y] = false;
       if (special) {
-        patch[`specUsed.${X}`] = true;
+        ap[X] = Math.max(0, ap[X] - AP_COST);
         lines.push(`${n[X]} used ${spec.name || 'their special attack'}! (−${dmg} HP)`);
       } else if (beast) {
+        ap[X] = Math.min(cap, ap[X] + 1);
         lines.push(`${n[X]} lunged at ${n[Y]}! (−${dmg} HP)`);
       } else {
+        ap[X] = Math.min(cap, ap[X] + 1);
         lines.push(`${n[X]} hit ${n[Y]} with a ${wpn.label.toLowerCase()}! (−${dmg} HP)`);
       }
       if (crit) lines.push('A critical hit!');
@@ -1496,11 +1542,11 @@ function resolveTurn(b, kind, arg, actor) {
       break;
     }
     case 'defend':
-      def[X] = true; hp[X] = Math.min(st[X].max, hp[X] + 2);
+      def[X] = true; hp[X] = Math.min(st[X].max, hp[X] + 2); ap[X] = Math.min(st[X].apCap || AP_BASE, ap[X] + 1);
       lines.push(`${n[X]} raised their guard! (+2 HP)`); fx = { t: X, k: 'shield' }; break;
     case 'praise': {
       const line = ['Nice outfit!', 'Your gear is sick.', 'You hike fast!', 'Cool hat!'][randi(0, 3)];
-      patch[`st.${Y}.atk`] = Math.max(2, st[Y].atk - 1);
+      patch[`st.${Y}.atk`] = Math.max(2, st[Y].atk - 1); ap[X] = Math.min(st[X].apCap || AP_BASE, ap[X] + 1);
       lines.push(`${n[X]}: "${line}"`, `${n[Y]} blushed. Their attack fell!`); break;
     }
     case 'truce': patch.truce = X; lines.push(`${n[X]} offered a truce.`); break;
@@ -1514,7 +1560,7 @@ function resolveTurn(b, kind, arg, actor) {
     case 'item': {
       const id = arg && arg.item, it = ITEMS[id];
       if (X !== ME || !it || count(id) <= 0) return null;
-      hp[X] = Math.min(st[X].max, hp[X] + it.heal); extra[X]['bag.' + id] = B.inc(-1);
+      hp[X] = Math.min(st[X].max, hp[X] + it.heal); extra[X]['bag.' + id] = B.inc(-1); ap[X] = Math.min(st[X].apCap || AP_BASE, ap[X] + 1);
       lines.push(`${n[X]} used ${it.name}! (+${it.heal} HP)`); fx = { t: X, k: 'heal' }; break;
     }
     case 'run':
@@ -1561,7 +1607,7 @@ function resolveTurn(b, kind, arg, actor) {
   }
   if (done) {
     patch.status = 'done'; patch.result = done;
-    if (b.test) return { patch: Object.assign(patch, { hp, def, lines, fx, seq: b.seq + 1, updated: Date.now(), turn: X }), extra: [] };
+    if (b.test) return { patch: Object.assign(patch, { hp, def, ap, lines, fx, seq: b.seq + 1, updated: Date.now(), turn: X }), extra: [] };
     b.p.forEach((u) => { if (extra[u].hp === undefined) extra[u].hp = Math.max(1, hp[u]); extra[u]['stats.battles'] = B.inc(1); });
   }
   // Next living fighter in the rotation.
@@ -1570,7 +1616,7 @@ function resolveTurn(b, kind, arg, actor) {
     const i = b.p.indexOf(X);
     for (let k = 1; k <= b.p.length; k++) { const u = b.p[(i + k) % b.p.length]; if (hp[u] > 0) { turn = u; break; } }
   }
-  Object.assign(patch, { hp, def, lines, fx, seq: b.seq + 1, updated: Date.now(), turn });
+  Object.assign(patch, { hp, def, ap, lines, fx, seq: b.seq + 1, updated: Date.now(), turn });
   const ops = b.p.filter((u) => u !== AI && Object.keys(extra[u]).length).map((u) => ({ col: COL.players, id: u, patch: extra[u] }));
   return { patch, extra: ops };
 }
@@ -2412,7 +2458,7 @@ function startTestBattle(kind) {
     st: { [AI]: { atk: foe.atk, def: foe.def, max: foe.max, lvl: foe.lvl }, [ME]: sm },
     hp: { [AI]: foe.max, [ME]: Math.max(S.hp, Math.ceil(sm.max / 2)) },
     def: { [AI]: false, [ME]: false },
-    turn: ME, truce: null, seq: 1, fx: null, result: null, specUsed: {},
+    turn: ME, truce: null, seq: 1, fx: null, result: null,
     lines: [`Test battle: ${S.name} vs ${foe.name}.`, 'Nothing here counts — swing away.'],
   };
   if (testPos) {
@@ -2798,7 +2844,7 @@ function drawMine() {
   openSheet(`
     <h2>⛏️ Mine a seam</h2>
     <p class="sub">One crown in every row, column and colour — and no two crowns touching, even corner to corner. Tap once to mark a dead cell, twice for a crown.</p>
-    <div class="mine" style="grid-template-columns:repeat(${n},1fr)">
+    <div class="mine-grid" style="grid-template-columns:repeat(${n},1fr)">
       ${cells.map((v, i) => {
         const r = Math.floor(i / n), c = i % n;
         return `<button class="mine-cell ${bad.has(i) ? 'bad' : ''}" data-cell="${i}"
