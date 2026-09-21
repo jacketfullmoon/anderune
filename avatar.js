@@ -117,12 +117,18 @@ function avatarSVG(look, eq = {}, opts = {}) {
   // Hats cover the top of the head, so skip the front hair (the back layer still shows).
   const hidesHair = hat === 'cap' || hat === 'pirate' || hat === 'wizard';
   const wrap = (inner) => `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
-  if (part === 'back') return wrap(style.back(hc));
+  const bgRect = `<rect x="0" y="0" width="64" height="64" fill="${look.bg || '#cfe8ff'}"/>`;
+  // The background circle lives on whichever layer paints first. In the profile's
+  // three-layer swipe animation that's the back-hair layer (av-back) — if the middle
+  // "head" layer carried it instead, its own opaque rect would sit in a separate <svg>
+  // stacked on top of av-back and blank out every back-hair shape (ponytail, braids,
+  // pigtails, bob, long, wavy, afro) no matter where their path actually is.
+  if (part === 'back') return wrap(bgRect + style.back(hc));
   if (part === 'front') return wrap(hidesHair ? '' : style.front(hc));
   const top = TOP_STYLES[look.top] || TOP_STYLES.tee;
   const shirt = look.shirt || '#3b82f6', skin = look.skin || '#f1c27d';
   return wrap(`
-    <rect x="0" y="0" width="64" height="64" fill="${look.bg || '#cfe8ff'}"/>
+    ${part === 'all' ? bgRect : ''}
     ${top.hood(shirt)}
     ${top.body(shirt, skin)}
     <rect x="28" y="37" width="8" height="8" fill="${look.skin || '#f1c27d'}"/>

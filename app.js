@@ -30,9 +30,17 @@ function distM(a, b) {
 }
 const fmtDist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
 function ago(t) { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; }
+// Move a lat/lng point a given distance (metres) and bearing (degrees, 0 = east, ccw).
+function offsetLL(pos, meters, bearingDeg) {
+  const ang = (bearingDeg * Math.PI) / 180;
+  return {
+    lat: pos.lat + (Math.sin(ang) * meters) / 111320,
+    lng: pos.lng + (Math.cos(ang) * meters) / (111320 * Math.cos(pos.lat * Math.PI / 180)),
+  };
+}
 
 // ---------- backend + state ----------
-const BUILD = 28;   // bump with each upload; shown in your profile
+const BUILD = 30;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -1242,6 +1250,7 @@ function openBattle(id) {
 }
 function exitBattle() {
   stopAR(); closeBattleChatQuiet();
+  clearInterval(AR.testDrift);
   battleUnsub && battleUnsub(); battleUnsub = null; clearTimeout(waitTimer); localB = null;
   $('#battle').classList.add('hidden'); document.body.classList.remove('in-battle'); inBattle = false; battleId = null; curB = null;
 }
@@ -2070,6 +2079,7 @@ function compassBearing(from, to) {
 }
 // Where is the thing we're fighting, in the real world?
 function foeSpot() {
+  if (localB && localB.testPos) return localB.testPos;      // stand-in "player" for admin test battles
   if (localB && localB.wildId) { const w = wilds.find((x) => x.id === localB.wildId); if (w) return w.pos; }
   if (localB && localB.questId) { const q = questById(localB.questId); if (q && S.quest) return q.steps[S.quest.step]; }
   if (curB) {
@@ -2311,9 +2321,12 @@ function startTestBattle(kind) {
     : { name: 'Test Rival', lvl: S.lvl, atk: sm.atk, def: sm.def, max: sm.max,
         looks: { look: { skin: '#c68642', hair: 'bob', hairColor: '#2b1a0e', shirt: '#e11d48', bg: '#2b2450', top: 'hoodie' },
                  equipped: { hat: 'cap', face: null, neck: null } } };
+  // Give them a stand-in spot nearby so AR has something real to anchor to — same as
+  // fighting an actual player. It drifts slightly so it doesn't feel glued in place.
+  const testPos = myPos ? offsetLL(myPos, rand(15, 40), rand(0, 360)) : null;
   localB = {
     p: [AI, ME], teams: { [AI]: 1, [ME]: 2 }, ai: true, test: true, status: 'active',
-    prize: 0, xp: 0, lossPct: 0,
+    prize: 0, xp: 0, lossPct: 0, testPos,
     names: { [AI]: foe.name, [ME]: S.name },
     looks: { [AI]: foe.looks, [ME]: { look: S.look, equipped: S.equipped, photo: S.photo || null } },
     special: { [ME]: S.special || null },
@@ -2323,6 +2336,14 @@ function startTestBattle(kind) {
     turn: ME, truce: null, seq: 1, fx: null, result: null, specUsed: {},
     lines: [`Test battle: ${S.name} vs ${foe.name}.`, 'Nothing here counts — swing away.'],
   };
+  if (testPos) {
+    clearInterval(AR.testDrift);
+    AR.testDrift = setInterval(() => {
+      if (!localB || !localB.testPos) return clearInterval(AR.testDrift);
+      localB.testPos = offsetLL(localB.testPos, rand(1, 4), rand(0, 360));
+      if (AR.on) placeFoe();
+    }, 2000);
+  }
   battleId = 'local'; inBattle = true; curB = null; shownSeq = 0; animChain = Promise.resolve();
   $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
   $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
