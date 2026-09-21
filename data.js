@@ -7,6 +7,12 @@ const ADMIN_NAMES = ['zack'];
 // Orange County to Mission Viejo. The camera can't leave it.
 const REGION = { west: -119.00, south: 33.40, east: -117.45, north: 34.45, name: 'Los Angeles to Mission Viejo' };
 
+// Real container ports — battles fought near one of these get a port backdrop.
+const PORTS = [
+  { lat: 33.7395, lng: -118.2610, name: 'Port of LA' },
+  { lat: 33.7542, lng: -118.2165, name: 'Port of Long Beach' },
+];
+
 const START = { lat: 34.0155, lng: -118.4945, label: 'Santa Monica' }; // near 3rd St Promenade
 const CLAIM_RADIUS_M = 60;   // how close you must be to open a chest
 const NEARBY_RADIUS_M = 500; // how close another player must be to battle (friends can chat from anywhere)

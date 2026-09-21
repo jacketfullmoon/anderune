@@ -40,7 +40,7 @@ function offsetLL(pos, meters, bearingDeg) {
 }
 
 // ---------- backend + state ----------
-const BUILD = 30;   // bump with each upload; shown in your profile
+const BUILD = 31;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -1242,10 +1242,8 @@ async function createBattle(oppId, opp) {
 function openBattle(id) {
   closeSheet();
   if (battleId && battleId !== id) exitBattle();
-  inBattle = true; battleId = id; curB = null; shownSeq = 0; animChain = Promise.resolve();
   bt.text.textContent = 'Loading battle…'; bt.menu.innerHTML = '';
-  $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
-  $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
+  enterBattleScreen(id);
   battleUnsub = B.watchDoc(COL.battles, id, onBattle);
 }
 function exitBattle() {
@@ -1298,7 +1296,14 @@ function applyFx(fx) {
   const spawn = (cls, text, style) => {
     const el = document.createElement('div');
     el.className = cls; el.textContent = text;
-    Object.assign(el.style, style);
+    // CSS custom properties (--from-x etc.) need setProperty — plain assignment via
+    // Object.assign silently drops them, which left every --from-x/--from-y/--spin/
+    // --dx/--dy driven animation starting from an unset (effectively invalid, no-op)
+    // transform instead of the off-screen position they were meant to launch from.
+    Object.entries(style || {}).forEach(([k, v]) => {
+      if (k.startsWith('--')) el.style.setProperty(k, v);
+      else el.style[k] = v;
+    });
     layer.appendChild(el);
     setTimeout(() => el.remove(), 1600);
     return el;
@@ -1308,17 +1313,30 @@ function applyFx(fx) {
     target.classList.remove('hurt'); void target.offsetWidth; target.classList.add('hurt');
     setTimeout(() => target.classList.remove('hurt'), 700);
   };
+  // A full-screen red pulse and a giant emoji rushing at the camera — only when
+  // I'm the one taking the hit, so my own attacks don't flash my own screen.
+  const takingHit = () => {
+    if (fx.t !== ME) return;
+    const flash = $('#dmg-flash');
+    if (flash) { flash.classList.remove('hit'); void flash.offsetWidth; flash.classList.add('hit'); }
+    const el = spawn('fx-incoming play', fx.emoji || '👊', { left: '50%', top: '48%' });
+    setTimeout(() => el.remove(), 300);
+  };
   if (fx.k === 'hit') {
     SFX.play('swing'); setTimeout(() => SFX.play(fx.t === ME ? 'hurt' : 'hit'), 320);
+    takingHit();
     spawn('fx-strike ' + (mine ? 'out' : 'in'), fx.emoji || '⚔️', {
       left: tx + 'px', top: ty + 'px',
-      '--from-x': (mine ? -box.width * 0.22 : box.width * 0.1) + 'px',
-      '--from-y': (mine ? box.height * 0.42 : -box.height * 0.12) + 'px',
+      // Launch from well outside the visible arena so the weapon genuinely
+      // swings in from off-frame rather than just drifting over from nearby.
+      '--from-x': (mine ? -box.width * 0.8 : box.width * 0.75) + 'px',
+      '--from-y': (mine ? box.height * 0.65 : -box.height * 0.6) + 'px',
       '--spin': (fx.w === 'fist' ? '-8deg' : '-150deg'),
     });
-    setTimeout(() => { hurt(); spawn('fx-pow', '💢', { left: tx + 'px', top: ty + 'px' }); }, 330);
+    setTimeout(() => { hurt(); spawn('fx-pow', '💢', { left: tx + 'px', top: ty + 'px' }); }, 260);
   } else if (fx.k === 'special') {
     SFX.play('special');
+    takingHit();
     spawn('fx-orbit', fx.emoji || '✨', { left: tx + 'px', top: ty + 'px' });
     for (let i = 0; i < 8; i++) {
       spawn('fx-spark', '✨', { left: tx + 'px', top: ty + 'px',
@@ -1874,9 +1892,7 @@ function startBossBattle(q, step) {
     turn: ME, truce: null, seq: 1, fx: null, result: null,
     lines: [`${step.text || ''}`.trim() || `${boss.name} blocks your way!`, `${boss.name} attacks!`],
   };
-  battleId = 'local'; inBattle = true; curB = null; shownSeq = 0; animChain = Promise.resolve();
-  $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
-  $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
+  enterBattleScreen('local');
   onBattle(localB);
 }
 function applyLocal(r) {
@@ -1938,6 +1954,71 @@ function isWaterAt(pos) {
     }
     return false;
   } catch { return null; }
+}
+
+// ---------- battle backdrops ----------
+// A rough read of what's actually around the player right now, so the (non-AR) battle
+// background looks roughly like where they're standing. Not exact — just ambient flavor,
+// computed once when a battle starts, from the same vector-tile data already used for
+// ocean-monster detection above.
+function nearestFeatureM(pos, sourceLayer, filterFn) {
+  let best = Infinity;
+  try {
+    const feats = map.querySourceFeatures('openmaptiles', { sourceLayer });
+    for (const f of feats) {
+      if (filterFn && !filterFn(f.properties || {})) continue;
+      const g = f.geometry; if (!g) continue;
+      const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((c) => c[0]) : [];
+      for (const ring of rings) {
+        const step = Math.max(1, Math.floor(ring.length / 10));   // a sparse sample is plenty
+        for (let i = 0; i < ring.length; i += step) {
+          const d = distM(pos, { lat: ring[i][1], lng: ring[i][0] });
+          if (d < best) best = d;
+        }
+      }
+    }
+  } catch {}
+  return best;
+}
+function countFeaturesNear(pos, sourceLayer, within) {
+  let n = 0;
+  try {
+    const feats = map.querySourceFeatures('openmaptiles', { sourceLayer });
+    for (const f of feats) {
+      const g = f.geometry; if (!g) continue;
+      const ring = g.type === 'Polygon' ? g.coordinates[0] : g.type === 'MultiPolygon' ? g.coordinates[0] && g.coordinates[0][0] : null;
+      const v = ring && ring[0];
+      if (v && distM(pos, { lat: v[1], lng: v[0] }) <= within) n++;
+    }
+  } catch {}
+  return n;
+}
+function pickBiome(pos) {
+  if (!pos || !map || !map.isStyleLoaded()) return 'default';
+  try {
+    if (PORTS.some((p) => distM(pos, p) < 3000)) return 'port';
+    if (isWaterAt(pos)) return 'ocean';
+    for (let i = 0; i < 8; i++) if (isWaterAt(offsetLL(pos, 300, i * 45))) return 'ocean';  // beach: water just offshore
+    if (nearestFeatureM(pos, 'landcover', (p) => p.class === 'sand') < 400) return 'ocean';
+    // Buildings before greenery: a downtown plaza's planter box shouldn't outrank a
+    // skyline just because it happens to be a little closer to the sample point.
+    const nearBuildings = countFeaturesNear(pos, 'building', 260);
+    if (nearBuildings >= 10) return 'urban';
+    if (nearBuildings >= 3) return 'neighborhood';
+    if (nearestFeatureM(pos, 'landcover', (p) => p.class === 'wood' || p.class === 'grass') < 200) return 'park';
+    return 'default';
+  } catch { return 'default'; }
+}
+function setBattleBiome() {
+  const arena = $('#arena');
+  if (arena) arena.dataset.biome = pickBiome(myPos);
+}
+// Shared setup for every way a battle can start (real PvP, wild, quest boss, test).
+function enterBattleScreen(id) {
+  inBattle = true; battleId = id; curB = null; shownSeq = 0; animChain = Promise.resolve();
+  $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
+  $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
+  setBattleBiome();
 }
 
 // Turn a land monster into something that had no business being out there.
@@ -2047,9 +2128,7 @@ function startWildBattle(w) {
     turn: ME, truce: null, seq: 1, fx: null, result: null,
     lines: [`A wild ${w.name} blocks your path!`],
   };
-  battleId = 'local'; inBattle = true; curB = null; shownSeq = 0; animChain = Promise.resolve();
-  $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
-  $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
+  enterBattleScreen('local');
   onBattle(localB);
 }
 // A beaten monster wanders off and a new one shows up somewhere else.
@@ -2344,9 +2423,7 @@ function startTestBattle(kind) {
       if (AR.on) placeFoe();
     }, 2000);
   }
-  battleId = 'local'; inBattle = true; curB = null; shownSeq = 0; animChain = Promise.resolve();
-  $('#foes').innerHTML = ''; $('#mine').innerHTML = '';
-  $('#battle').classList.remove('hidden'); document.body.classList.add('in-battle');
+  enterBattleScreen('local');
   onBattle(localB);
 }
 

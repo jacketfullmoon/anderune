@@ -341,9 +341,83 @@ input.range { width: 100%; margin-top: 8px; accent-color: #c084fc; }
   padding: 8px 13px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.5); backdrop-filter: blur(4px); }
 .ar-btn.on { background: #e11d48; border-color: #fff; }
 .arena.ar { background: #0b0b12; }
-.arena.ar .sun, .arena.ar .cloud, .arena.ar .platform { display: none; }
+.arena.ar .sun, .arena.ar .cloud, .arena.ar .platform, .arena.ar .moon, .arena.ar .stars, .arena.ar .biome-art { display: none; }
 .arena.ar .fighters.mine .bt-spot { display: none; }          /* you're the one holding the phone */
 .arena.ar .fighters.mine { z-index: 4; }
+
+/* ── Non-AR backdrop: sky + geography, day and night ─────────
+   .arena[data-biome] picks the sky/ground gradient; the matching .biome-art
+   layer draws a simple horizon silhouette (ocean, port cranes, a skyline,
+   houses, or a park). Sun/clouds run by day, moon/stars take over at night —
+   same for every biome, only the gradient and horizon art change. */
+.arena[data-biome="ocean"]:not(.ar) { background: linear-gradient(#8fd0f2 0%, #bdeeff 45%, #dff7ff 55%, #1ea7c9 55.2%, #0a5f7a 100%); }
+.arena[data-biome="port"]:not(.ar) { background: linear-gradient(#9fc9e8 0%, #c9e3f0 50%, #d8dee0 55%, #6b7280 55.2%, #3f4650 100%); }
+.arena[data-biome="urban"]:not(.ar) { background: linear-gradient(#a7c8ea 0%, #cfe3f3 50%, #dfe7ee 55%, #94a0ac 55.2%, #5b6472 100%); }
+.arena[data-biome="neighborhood"]:not(.ar) { background: linear-gradient(#bfe0f5 0%, #dcefff 50%, #eef8ea 55%, #b7dba0 55.2%, #7fbd6f 100%); }
+.arena[data-biome="park"]:not(.ar) { background: linear-gradient(#bfe6ff 0%, #ddf3ff 45%, #e9fbe0 55%, #8fd47a 55.2%, #4f9e42 100%); }
+body.night .arena:not(.ar) { background: linear-gradient(#0c1330 0%, #1a2450 45%, #232f5e 55%, #1a2a1f 55.2%, #0e1a12 100%); }
+body.night .arena[data-biome="ocean"]:not(.ar) { background: linear-gradient(#0a1330 0%, #142452 50%, #0d3450 55%, #072b3d 55.2%, #041a26 100%); }
+body.night .arena[data-biome="port"]:not(.ar) { background: linear-gradient(#0c1226 0%, #171f38 50%, #262c34 55%, #181d22 55.2%, #0c0f12 100%); }
+body.night .arena[data-biome="urban"]:not(.ar) { background: linear-gradient(#0d1330 0%, #182140 50%, #232a3a 55%, #171b22 55.2%, #0b0d11 100%); }
+body.night .arena[data-biome="neighborhood"]:not(.ar) { background: linear-gradient(#0d1530 0%, #1a2448 50%, #1c2c22 55%, #142418 55.2%, #0a140c 100%); }
+body.night .arena[data-biome="park"]:not(.ar) { background: linear-gradient(#0b1430 0%, #172448 45%, #142a1c 55%, #0e2214 55.2%, #071408 100%); }
+
+.moon, .stars { display: none; }
+.moon { position: absolute; top: calc(var(--safe-t) + 92px); left: 8%; font-size: 44px; filter: drop-shadow(0 0 12px rgba(220,230,255,.7)); }
+.stars { position: absolute; inset: 0; }
+.stars::before, .stars::after { content: ''; position: absolute; top: 0; left: 0; width: 2px; height: 2px; border-radius: 50%; background: #fff; }
+.stars::before { box-shadow:
+  18px 30px #fff, 54px 62px #fff, 92px 22px #fff, 130px 80px #fff, 168px 44px #fff, 206px 96px #fff,
+  244px 28px #fff, 282px 70px #fff, 320px 18px #fff, 350px 54px #fff, 38px 110px #fff, 112px 130px #fff,
+  190px 116px #fff, 268px 128px #fff, 336px 104px #fff; opacity: .85; }
+.stars::after { box-shadow:
+  6px 60px #fff, 70px 14px #fff, 108px 100px #fff, 150px 34px #fff, 186px 70px #fff, 224px 12px #fff,
+  260px 108px #fff, 298px 40px #fff, 334px 88px #fff, 8px 96px #fff; opacity: .55; }
+body.night .arena:not(.ar) .sun, body.night .arena:not(.ar) .cloud { display: none; }
+body.night .arena:not(.ar) .moon, body.night .arena:not(.ar) .stars { display: block; }
+
+.biome-art { display: none; position: absolute; left: 0; right: 0; bottom: 42%; height: 13%; min-height: 70px; z-index: 1; }
+.biome-art svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.arena[data-biome="ocean"]:not(.ar) .biome-art[data-biome="ocean"],
+.arena[data-biome="port"]:not(.ar) .biome-art[data-biome="port"],
+.arena[data-biome="urban"]:not(.ar) .biome-art[data-biome="urban"],
+.arena[data-biome="neighborhood"]:not(.ar) .biome-art[data-biome="neighborhood"],
+.arena[data-biome="park"]:not(.ar) .biome-art[data-biome="park"] { display: block; }
+
+.oc-wave1 { fill: #38b6dd; opacity: .9; } .oc-wave2 { fill: #1e88ad; }
+.oc-sail { fill: #fdfdfd; opacity: .9; } .oc-hull { fill: #3a2a1a; }
+body.night .oc-wave1 { fill: #123a52; } body.night .oc-wave2 { fill: #0a2536; }
+body.night .oc-sail { fill: #cfd8e6; opacity: .7; } body.night .oc-hull { fill: #10161c; }
+
+.pt-water { fill: #2f4858; opacity: .55; }
+.pt-c1 { fill: #d1495b; } .pt-c2 { fill: #3178c6; } .pt-c3 { fill: #e0a52e; }
+.pt-crane rect, .pt-crane line { fill: #2b3542; stroke: #2b3542; }
+body.night .pt-c1 { fill: #7a2a34; } body.night .pt-c2 { fill: #1c4a80; } body.night .pt-c3 { fill: #8a6a1c; }
+body.night .pt-crane rect, body.night .pt-crane line { fill: #12161c; stroke: #12161c; }
+body.night .pt-water { fill: #0a1620; opacity: .8; }
+
+.uh-b { fill: #6b7c93; } .uh-win { fill: #fef3c0; opacity: .18; }
+body.night .uh-b { fill: #1c2333; } body.night .uh-win { fill: #ffd76b; opacity: .9; }
+
+.nb-house rect { fill: #d9c9a8; } .nb-roof { fill: #8a5a3c; }
+.nb-tree-c { fill: #4f9e42; } .nb-tree-t { fill: #6b4a2c; }
+body.night .nb-house rect { fill: #22201c; } body.night .nb-roof { fill: #17120c; }
+body.night .nb-tree-c { fill: #14260f; } body.night .nb-tree-t { fill: #1c140c; }
+
+.pk-hill { fill: #6bc25a; } .pk-tree-c { fill: #3f9d3f; } .pk-tree-t { fill: #6b4a2c; }
+body.night .pk-hill { fill: #0f2414; } body.night .pk-tree-c { fill: #0c1f0c; } body.night .pk-tree-t { fill: #1c140c; }
+
+/* ── Screen-wide damage flash + incoming hit ─────────────── */
+#dmg-flash { position: absolute; inset: 0; z-index: 50; pointer-events: none; background: rgba(220,20,20,0); }
+#dmg-flash.hit { animation: dmgFlash .4s ease-out; }
+@keyframes dmgFlash { 0% { background: rgba(220,20,20,.4); } 100% { background: rgba(220,20,20,0); } }
+.fx-incoming { font-size: 60px; z-index: 6; filter: drop-shadow(0 10px 16px rgba(0,0,0,.6)); }
+.fx-incoming.play { animation: fxIncoming .26s cubic-bezier(.2,.9,.3,1) forwards; }
+@keyframes fxIncoming {
+  0%   { transform: translate(-50%,-50%) scale(.15) rotate(-14deg); opacity: 0; }
+  28%  { opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(4.4) rotate(8deg); opacity: 0; }
+}
 
 /* Everything pinned to the monster's real-world spot lives in here */
 #ar-anchor { position: absolute; left: 50%; top: 42%; z-index: 3; width: min(88%, 420px);
@@ -376,14 +450,14 @@ body.ar .bt-text { text-shadow: 0 2px 6px rgba(0,0,0,.9); }
 #fx-layer > div { position: absolute; transform: translate(-50%, -50%); line-height: 1; will-change: transform, opacity; }
 .fx-strike { font-size: 54px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.55)); }
 /* my swing: comes in huge right by the camera, shrinks as it reaches them */
-.fx-strike.out { animation: fxOut .44s cubic-bezier(.3,1.4,.55,1) forwards; }
+.fx-strike.out { animation: fxOut .34s cubic-bezier(.3,1.4,.55,1) forwards; }
 @keyframes fxOut {
   0%   { transform: translate(calc(-50% + var(--from-x)), calc(-50% + var(--from-y))) rotate(-48deg) scale(2.9); opacity: 0; }
   22%  { opacity: 1; }
   100% { transform: translate(-50%, -50%) rotate(var(--spin)) scale(.78); opacity: 1; }
 }
 /* their swing: starts small at them and grows as it swings into your face */
-.fx-strike.in { animation: fxIn .44s cubic-bezier(.3,1.3,.55,1) forwards; }
+.fx-strike.in { animation: fxIn .24s cubic-bezier(.3,1.3,.55,1) forwards; }
 @keyframes fxIn {
   0%   { transform: translate(calc(-50% + var(--from-x)), calc(-50% + var(--from-y))) rotate(20deg) scale(.6); opacity: 0; }
   25%  { opacity: 1; }

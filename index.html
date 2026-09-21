@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css">
-<link rel="stylesheet" href="style.css?v=30">
+<link rel="stylesheet" href="style.css?v=31">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -100,6 +100,7 @@
 
 <!-- Battle -->
 <section id="battle" class="battle hidden">
+  <div id="dmg-flash"></div>
   <div class="arena" id="arena">
     <canvas id="ar-canvas" class="hidden"></canvas>
     <canvas id="ar-glow" class="hidden"></canvas>
@@ -110,6 +111,72 @@
     <button id="ar-toggle" class="ar-btn">📷 AR</button>
     <div class="sun"></div>
     <div class="cloud c1"></div><div class="cloud c2"></div>
+    <div class="moon">🌙</div>
+    <div class="stars"></div>
+    <!-- Non-AR backdrop: matches roughly where the player is standing IRL. -->
+    <div class="biome-art" data-biome="ocean">
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" aria-hidden="true">
+        <path class="oc-wave2" d="M0 68 Q30 60 60 68 T120 68 T180 68 T240 68 T300 68 T360 68 T400 68 L400 100 L0 100 Z"/>
+        <path class="oc-wave1" d="M0 55 Q25 48 50 55 T100 55 T150 55 T200 55 T250 55 T300 55 T350 55 T400 55 L400 100 L0 100 Z"/>
+        <polygon class="oc-sail" points="60,20 60,44 84,44"/>
+        <rect class="oc-hull" x="52" y="44" width="20" height="5" rx="1"/>
+      </svg>
+    </div>
+    <div class="biome-art" data-biome="port">
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="pt-water" x="0" y="70" width="400" height="30"/>
+        <g class="pt-crane">
+          <rect x="150" y="20" width="5" height="52"/><rect x="150" y="20" width="70" height="5"/>
+          <line x1="152" y1="22" x2="205" y2="45"/>
+        </g>
+        <g class="pt-crane">
+          <rect x="230" y="14" width="5" height="58"/><rect x="185" y="14" width="50" height="5"/>
+          <line x1="232" y1="16" x2="192" y2="42"/>
+        </g>
+        <rect class="pt-c1" x="16" y="54" width="26" height="16"/><rect class="pt-c2" x="44" y="52" width="26" height="18"/>
+        <rect class="pt-c3" x="72" y="58" width="26" height="12"/>
+        <rect class="pt-c2" x="272" y="54" width="26" height="16"/><rect class="pt-c3" x="300" y="50" width="26" height="20"/>
+        <rect class="pt-c1" x="328" y="58" width="26" height="12"/>
+      </svg>
+    </div>
+    <div class="biome-art" data-biome="urban">
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="uh-b" x="10" y="40" width="30" height="60"/><rect class="uh-b" x="46" y="20" width="24" height="80"/>
+        <rect class="uh-b" x="76" y="50" width="34" height="50"/><rect class="uh-b" x="116" y="10" width="20" height="90"/>
+        <rect class="uh-b" x="142" y="34" width="28" height="66"/><rect class="uh-b" x="176" y="58" width="24" height="42"/>
+        <rect class="uh-b" x="206" y="24" width="30" height="76"/><rect class="uh-b" x="242" y="44" width="22" height="56"/>
+        <rect class="uh-b" x="270" y="16" width="26" height="84"/><rect class="uh-b" x="302" y="52" width="30" height="48"/>
+        <rect class="uh-b" x="338" y="30" width="24" height="70"/><rect class="uh-b" x="368" y="46" width="26" height="54"/>
+        <g class="uh-win">
+          <rect x="18" y="48" width="3" height="4"/><rect x="26" y="48" width="3" height="4"/><rect x="18" y="60" width="3" height="4"/>
+          <rect x="52" y="30" width="3" height="4"/><rect x="60" y="30" width="3" height="4"/><rect x="52" y="46" width="3" height="4"/>
+          <rect x="122" y="20" width="3" height="4"/><rect x="129" y="20" width="3" height="4"/><rect x="122" y="40" width="3" height="4"/>
+          <rect x="212" y="34" width="3" height="4"/><rect x="220" y="34" width="3" height="4"/><rect x="212" y="54" width="3" height="4"/>
+          <rect x="278" y="26" width="3" height="4"/><rect x="286" y="26" width="3" height="4"/><rect x="278" y="46" width="3" height="4"/>
+          <rect x="344" y="40" width="3" height="4"/><rect x="374" y="54" width="3" height="4"/><rect x="382" y="54" width="3" height="4"/>
+        </g>
+      </svg>
+    </div>
+    <div class="biome-art" data-biome="neighborhood">
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" aria-hidden="true">
+        <g class="nb-house"><rect x="20" y="60" width="46" height="38"/><polygon class="nb-roof" points="14,60 43,36 72,60"/></g>
+        <g class="nb-house"><rect x="90" y="66" width="40" height="32"/><polygon class="nb-roof" points="85,66 110,44 135,66"/></g>
+        <circle class="nb-tree-c" cx="160" cy="70" r="14"/><rect class="nb-tree-t" x="157" y="80" width="6" height="18"/>
+        <g class="nb-house"><rect x="190" y="58" width="50" height="40"/><polygon class="nb-roof" points="184,58 215,32 246,58"/></g>
+        <g class="nb-house"><rect x="262" y="68" width="38" height="30"/><polygon class="nb-roof" points="257,68 281,48 305,68"/></g>
+        <circle class="nb-tree-c" cx="330" cy="72" r="12"/><rect class="nb-tree-t" x="327" y="80" width="5" height="16"/>
+        <g class="nb-house"><rect x="350" y="62" width="44" height="36"/><polygon class="nb-roof" points="345,62 372,38 399,62"/></g>
+      </svg>
+    </div>
+    <div class="biome-art" data-biome="park">
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none" aria-hidden="true">
+        <path class="pk-hill" d="M0 60 Q60 30 130 55 T260 45 T400 58 L400 100 L0 100 Z"/>
+        <circle class="pk-tree-c" cx="60" cy="66" r="16"/><rect class="pk-tree-t" x="56" y="78" width="7" height="18"/>
+        <circle class="pk-tree-c" cx="150" cy="58" r="20"/><rect class="pk-tree-t" x="145" y="74" width="9" height="22"/>
+        <circle class="pk-tree-c" cx="260" cy="52" r="16"/><rect class="pk-tree-t" x="256" y="64" width="7" height="20"/>
+        <circle class="pk-tree-c" cx="340" cy="62" r="18"/><rect class="pk-tree-t" x="335" y="76" width="8" height="20"/>
+      </svg>
+    </div>
     <div id="foes" class="fighters foes"></div>
     <div id="mine" class="fighters mine"></div>
   </div>
@@ -120,9 +187,9 @@
 </section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
-<script src="data.js?v=30"></script>
-<script src="avatar.js?v=30"></script>
-<script src="backend.js?v=30"></script>
-<script src="app.js?v=30"></script>
+<script src="data.js?v=31"></script>
+<script src="avatar.js?v=31"></script>
+<script src="backend.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>
