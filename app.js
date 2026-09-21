@@ -40,7 +40,7 @@ function offsetLL(pos, meters, bearingDeg) {
 }
 
 // ---------- backend + state ----------
-const BUILD = 34;   // bump with each upload; shown in your profile
+const BUILD = 35;   // bump with each upload; shown in your profile
 const B = Backend;
 const COL = { names: 'qm_usernames', players: 'qm_players', req: 'qm_requests', battles: 'qm_battles', chats: 'qm_chats', quests: 'qm_quests' };
 let ME = null;       // my uid
@@ -1451,12 +1451,8 @@ function showMenu() {
     return menu([['🤝 Accept', () => act('truce-yes'), 'b-green'], ['✊ Refuse', () => act('truce-no'), 'b-red']]);
   }
   bt.text.textContent = `What will ${b.names[ME]} do?`;
-  const actions = [['⚔️', 'Attack', weaponMenu, 'b-red'], ['🛡️', 'Defend', () => act('defend'), 'b-blue'],
-                    ['✨', 'Act', actMenu, 'b-gold'], ['🏃', 'Run', () => act('run'), 'b-gray']];
-  // AR mode already floats the button grid next to the AR-anchored enemy —
-  // keep that behavior there instead of fanning circles around a hidden avatar.
-  if (AR.on) menu(actions.map(([e, l, fn, cls]) => [`${e} ${l}`, fn, cls]));
-  else radialMenu(actions);
+  radialMenu([['⚔️', 'Attack', weaponMenu, 'b-red'], ['🛡️', 'Defend', () => act('defend'), 'b-blue'],
+              ['✨', 'Act', actMenu, 'b-gold'], ['🏃', 'Run', () => act('run'), 'b-gray']]);
 }
 // With two enemies you choose who to hit.
 function pickTarget(kind, extra = {}) {
@@ -2320,9 +2316,9 @@ async function toggleAR() {
   btn.textContent = '📷 AR on'; btn.classList.add('on');
   $('#arena').classList.add('ar'); document.body.classList.add('ar');
   ['#ar-canvas', '#ar-glow', '#ar-anchor'].forEach((id) => $(id).classList.remove('hidden'));
-  // the enemy and its buttons now live at the monster's spot in the world
+  // the enemy now lives at the monster's spot in the world; your own controls
+  // (bubble menu + bottom panel) stay put same as outside AR.
   $('#ar-anchor').appendChild($('#foes'));
-  $('#ar-anchor').appendChild(bt.menu);
   placeFoe();
   drawAR();
   toast(tracked ? 'Point your phone around — they stay where they are.'
@@ -2347,7 +2343,6 @@ function stopAR() {
   if (arena) {                                   // put the fight back on the drawn field
     arena.classList.remove('ar');
     const foes = $('#foes'); if (foes) arena.appendChild(foes);
-    const panel = document.querySelector('.bt-panel'); if (panel && bt.menu) panel.appendChild(bt.menu);
   }
   document.body.classList.remove('ar');
   ['#ar-canvas', '#ar-glow', '#ar-anchor', '#ar-hint'].forEach((id) => { const el = $(id); if (el) el.classList.add('hidden'); });

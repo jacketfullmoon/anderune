@@ -375,7 +375,7 @@ input.range { width: 100%; margin-top: 8px; accent-color: #c084fc; }
   padding: 8px 13px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,.5); backdrop-filter: blur(4px); }
 .ar-btn.on { background: #e11d48; border-color: #fff; }
 .arena.ar { background: #0b0b12; }
-.arena.ar .sun, .arena.ar .cloud, .arena.ar .platform, .arena.ar .moon, .arena.ar .stars, .arena.ar .biome-art, .arena.ar .bt-radial { display: none; }
+.arena.ar .sun, .arena.ar .cloud, .arena.ar .platform, .arena.ar .moon, .arena.ar .stars, .arena.ar .biome-art { display: none; }
 .arena.ar .fighters.mine .bt-spot { display: none; }          /* you're the one holding the phone */
 .arena.ar .fighters.mine { z-index: 4; }
 
@@ -469,9 +469,6 @@ body.night .pk-hill { fill: #0f2414; } body.night .pk-tree-c { fill: #0c1f0c; } 
 #ar-anchor .bt-sprite svg, #ar-anchor .bt-sprite .pic { border-radius: 50%; }
 @keyframes loom { 0%,100% { transform: scale(1) translateY(0) } 50% { transform: scale(1.05) translateY(-5px) } }
 #ar-anchor .bt-card { background: rgba(20,10,40,.68); backdrop-filter: blur(4px); }
-#ar-anchor .bt-menu { width: 100%; }
-#ar-anchor .bt-menu button { backdrop-filter: blur(3px); border: 1.5px solid rgba(255,255,255,.45);
-  box-shadow: 0 0 18px rgba(120,180,255,.35), inset 0 -4px 0 rgba(0,0,0,.25); }
 #ar-hint { position: absolute; z-index: 5; top: 50%; transform: translateY(-50%);
   background: rgba(10,6,24,.75); color: #fff; font-family: var(--fun); font-weight: 700; font-size: 15px;
   padding: 10px 14px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.4); white-space: nowrap; }
